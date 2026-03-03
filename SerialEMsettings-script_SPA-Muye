@@ -1,0 +1,5379 @@
+MaxMacros	60
+Macro	0
+ScriptName Setup_MultiGrid_Batch-GridMap
+
+# ----------------------------------------------------------------------
+# Purpose:
+# This script prepares SerialEM and the microscope for MultiGrid-based
+# batch Grid Map acquisition by normalizing the microscope state.
+# It loads site-specific EMProperties, turns OFF Low Dose mode and
+# the energy filter slit, switches to the Grid Map magnification if needed,
+# and opens the MultiGrid dialog and Navigator so that the user can
+# immediately start Grid Map acquisition in a stable and reproducible
+# state.
+#
+# Author: F.M.
+# Affiliation: JEOL Ltd.
+# Date: 2025-12-24
+#
+# License: MIT License
+# Permission is hereby granted, free of charge, to any person obtaining a
+# copy of this script and associated documentation files (the "Script"),
+# to deal in the Script without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Script, subject to the following conditions:
+# The above copyright notice and this permission notice shall be included
+# in all copies or substantial portions of the Script.
+# THE SCRIPT IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
+# ----------------------------------------------------------------------
+
+CallFunction EMProperties::LoadAdditionalProperties
+
+ReportMag mag
+ReportLowDose
+isLowDoseOn = $repVal1
+
+SetLowDoseMode 0
+SetSlitIn 0
+
+If $mag != $mag_atlas
+   Call CallAtlasMag
+Endif
+
+LongOperation In
+OpenDialog Multigrid 0
+OpenNavigator
+EndMacro
+Macro	1
+ScriptName AfterTakeGridMap
+
+# ====================
+
+SetBeamBlank 1
+EndMacro
+Macro	2
+ScriptName ========= For TakeSquare =========
+EndMacro
+Macro	3
+ScriptName BeforeTakeSquares
+
+# ----------------------------------------------------------------------
+# Summary (one line):
+# Prepare microscope/camera for multi-square acquisition (optional tilt + Koehler Z handling), then auto-center each square by map-map alignment before imaging.
+#
+# Author: F.M. (JEOL Ltd.)
+# Date: 2025-12-24
+#
+# License: MIT License
+# ----------------------------------------------------------------------
+#===================================================================
+# Script for taking multiple square images. 
+# --------------------------------------------------------------------------------------------------------------------
+# <How to run>
+# 1. Take square position by "Add points" in Multiple window
+# --------------------------------------------------------------------------------------------------------------------
+#===================================================================
+
+# =================
+# Parameters
+# =================
+exp_time = 5 #[sec]
+binFactor = 2
+CLapt_before = 1 # CLapt for taking square. 0: Remove, 1: No.1, 2: No.2, 3:No.3, 4:No.4
+do_tilt = 0 # how much degree you need, 0 is none
+do_centerSquare = 0 # Do you want to shift to center of square, 0 is none.
+
+# ============ Parameters for MoveToSquarae============
+maxShiftUm = 100 #[um], max shift search
+pctScale = 20 # 0: use default rotation search, 10 for 10 percent
+maxRotDeg = -1 # -1: default, 10 for plus-minus 10 deg
+inhibitShift = 1 #1: do not apply shift 
+thr_shift2maker = 0  #[um] Whether to apply the threshold for shift to maker, <=0: do not apply shift to maker,  
+# =====================================
+
+
+# ============================
+# Main
+# ============================
+
+CallFunction BeforeTakeSquares::Core
+
+# Set camera parameters
+SetExposure R $exp_time
+SetProcessing R 2 # 2:gain reference
+SetDoseFracParams R 0 0 0 0 0    
+
+# Reset tilt
+TiltTo 0 
+TiltTo 0
+
+#RestoreCameraSet R
+
+# =============== Tilt operation for square 1=============
+If $do_tilt != 0
+   Eucentricity 1 #rough
+   TiltTo ($do_tilt + 5)
+   Delay 1 sec 
+   TiltTo $do_tilt
+   Delay 1 sec 
+   TiltTo $do_tilt
+   Delay 5 sec
+Endif 
+
+CallFunction EMProperties::LoadAdditionalProperties
+
+# If koehler illumination apply offset Z
+#==========koehler_z_offset============
+If ($koehler_z_offset != 0)
+   Echo ===> Adjust eucentircity for whole squares
+   ReportStageXYZ 
+   z = $RepVal3
+   ht = $z  + $koehler_z_offset 
+   if $ht < -210 
+      echo Caution! over z stage, -210 and stop. Please Skip this grid for Koehler mode.
+   Else
+      MoveStage 0 0 $koehler_z_offset #test
+      UpdateGroupZ 
+   Endif 
+Else
+   Echo ===> Skip adjust eucentircity for whole squares
+Endif 
+
+# =============== Tilt operation for square 2=============
+If $do_tilt != 0 
+   # =============== Tilt operation stage shift=============
+   ReportTiltAngle tiltang
+   diffy = SIN ( $tiltang ) * $koehler_z_offset 
+   Delay 3 sec
+   MoveStage 0 $diffy 0
+Endif 
+#=========================
+
+
+# =================== Go to Square center ==============
+If $do_centerSquare == 1
+  CallFunction BeforeTakeSquares::MoveToSquareCenter
+EndIf
+
+# ================================================
+
+#########################################################
+
+Function Core
+
+    CallFunction EMProperties::LoadAdditionalProperties
+
+    # Initialize
+
+    SetBeamBlank 1
+
+    IsVariableDefined FIRSTNAVDONE
+    If $repVal1 == 0
+        # set FIRSTNAVDONE
+        FIRSTNAVDONE := 0
+    EndIf 
+
+    #==== Open Beam valve =======
+    ReportColumnOrGunValve 
+    If $repVal1 == 0
+        SetColumnOrGunValve 1
+    EndIf 
+    #=========================
+
+    ReportMag mag
+    ReportLowDose
+    isLowDoseOn = $repVal1
+
+    SetLowDoseMode 0
+    SetSlitIn 0
+
+    If $mag != $SquareMag
+       Call CallSquareMag
+    Endif 
+
+EndFunction
+
+
+Function MoveToSquareCenter
+   # =====================================
+
+   loop 1
+      #Load the map that the current item was drawnon, into bufferB
+      LoadPieceAtNavPoint 0
+      Copy A F
+      
+      #Take View image and Buffer A
+      #SetLowDoseMode 1
+      #GoToLowDoseArea S
+      
+      Preview 
+      
+      #get Image coordinates (cx, cy)
+      ReportItemImageCoords 0 F
+      
+      cx = $RepVal1
+      cy = $RepVal2
+      okflag = $RepVal3
+      
+      if ( $okflag < 0)
+         Echo Could not transform item to image coordinates on Buf B
+         Exit 
+      Endif 
+      
+      AlignBetweenMags F $cx $cy $maxShiftUm $pctScale $inhibitShift 
+
+      ReportAlignShift 
+      alishiftx = $RepVal3 * 0.001
+      alishifty = $RepVal4 * 0.001
+
+      rad = SQRT ( $alishiftx * $alishiftx + $alishifty * $alishiftx )
+
+      echo $rad
+
+      if ( $thr_shift2maker > 0 ) AND ( $rad > $thr_shift2maker )
+         #======Shift item by alignment ===========
+         ShiftItemsByAlignment 
+         echo ------------ > Do shift-items by align ----------->
+      Endif   
+
+      ResetImageShift 
+      SetImageShift 0 0
+      ReportStageXYZ sx sy sz
+      echo stage $sx $sy $sz
+   EndLoop 
+
+EndFunction
+EndMacro
+Macro	4
+ScriptName BeforeTakeSquares_Tilted
+
+# ----------------------------------------------------------------------
+# Summary (one line):
+# Prepare microscope/camera for multi-square acquisition (optional tilt + Koehler Z handling), then auto-center each square by map↔view alignment before imaging.
+#
+# Author: F.M. (JEOL Ltd.)
+# Date: 2025-12-24
+#
+# License: MIT License
+# ----------------------------------------------------------------------
+#===================================================================
+# Script for taking multiple square images. 
+# --------------------------------------------------------------------------------------------------------------------
+# <How to run>
+# 1. Take square position by "Add points" in Multiple window
+# --------------------------------------------------------------------------------------------------------------------
+# Made and modified by TF and FM.
+#===================================================================
+
+# =================
+# Parameters
+# =================
+exp_time = 5 #[sec]
+binFactor = 2
+CLapt_before = 1 # CLapt for taking square. 0: Remove, 1: No.1, 2: No.2, 3:No.3, 4:No.4
+do_tilt = 30 # how much degree you need, 0 is none
+do_centerSquare = 0 # Do you want to shift to center of square, 0 is none.
+
+# ============ Parameters for MoveToSquarae============
+maxShiftUm = 100 #[um], max shift search
+pctScale = 20 # 0: use default rotation search, 10 for 10 percent
+maxRotDeg = -1 # -1: default, 10 for plus-minus 10 deg
+inhibitShift = 1 #1: do not apply shift 
+thr_shift2maker = 0  #[um] Whether to apply the threshold for shift to maker, <=0: do not apply shift to maker,  
+# =====================================
+
+
+# ============================
+# Main
+# ============================
+
+CallFunction BeforeTakeSquares::Core
+
+# Set camera parameters
+SetExposure R $exp_time
+SetProcessing R 2 # 2:gain reference
+SetDoseFracParams R 0 0 0 0 0    
+
+# Reset tilt
+TiltTo 0 
+TiltTo 0
+
+#RestoreCameraSet R
+
+# =============== Tilt operation for square 1=============
+If $do_tilt != 0
+   Eucentricity 1 #rough
+   TiltTo ($do_tilt + 5)
+   Delay 1 sec 
+   TiltTo $do_tilt
+   Delay 1 sec 
+   TiltTo $do_tilt
+   Delay 5 sec
+Endif 
+
+CallFunction EMProperties::LoadAdditionalProperties
+
+# If koehler illumination apply offset Z
+#==========koehler_z_offset============
+If ($koehler_z_offset != 0)
+   Echo ===> Adjust eucentircity for whole squares
+   ReportStageXYZ 
+   z = $RepVal3
+   ht = $z  + $koehler_z_offset 
+   if $ht < -210 
+      echo Caution! over z stage, -210 and stop. Please Skip this grid for Koehler mode.
+   Else
+      MoveStage 0 0 $koehler_z_offset #test
+      UpdateGroupZ 
+   Endif 
+Else
+   Echo ===> Skip adjust eucentircity for whole squares
+Endif 
+
+# =============== Tilt operation for square 2=============
+If $do_tilt != 0 
+   # =============== Tilt operation stage shift=============
+   ReportTiltAngle tiltang
+   diffy = SIN ( $tiltang ) * $koehler_z_offset 
+   Delay 3 sec
+   MoveStage 0 $diffy 0
+Endif 
+#=========================
+
+
+# =================== Go to Square center ==============
+If $do_centerSquare == 1
+  CallFunction BeforeTakeSquares::MoveToSquareCenter
+EndIf
+# ================================================
+
+#########################################################
+
+Function Core
+
+    CallFunction EMProperties::LoadAdditionalProperties
+
+    # Initialize
+
+    SetBeamBlank 1
+
+    IsVariableDefined FIRSTNAVDONE
+    If $repVal1 == 0
+        # set FIRSTNAVDONE
+        FIRSTNAVDONE := 0
+    EndIf 
+
+    #==== Open Beam valve =======
+    ReportColumnOrGunValve 
+    If $repVal1 == 0
+        SetColumnOrGunValve 1
+    EndIf 
+    #=========================
+
+    ReportMag mag
+    ReportLowDose
+    isLowDoseOn = $repVal1
+
+    SetLowDoseMode 0
+    SetSlitIn 0
+
+    If $mag != $SquareMag
+       Call CallSquareMag
+    Endif 
+
+EndFunction
+
+
+Function MoveToSquareCenter
+   # =====================================
+
+   loop 1
+      #Load the map that the current item was drawnon, into bufferB
+      LoadPieceAtNavPoint 0
+      Copy A F
+      
+      #Take View image and Buffer A
+      #SetLowDoseMode 1
+      #GoToLowDoseArea S
+      
+      Preview 
+      
+      #get Image coordinates (cx, cy)
+      ReportItemImageCoords 0 F
+      
+      cx = $RepVal1
+      cy = $RepVal2
+      okflag = $RepVal3
+      
+      if ( $okflag < 0)
+         Echo Could not transform item to image coordinates on Buf B
+         Exit 
+      Endif 
+      
+      AlignBetweenMags F $cx $cy $maxShiftUm $pctScale $inhibitShift 
+
+      ReportAlignShift 
+      alishiftx = $RepVal3 * 0.001
+      alishifty = $RepVal4 * 0.001
+
+      rad = SQRT ( $alishiftx * $alishiftx + $alishifty * $alishiftx )
+
+      echo $rad
+
+      if ( $thr_shift2maker > 0 ) AND ( $rad > $thr_shift2maker )
+         #======Shift item by alignment ===========
+         ShiftItemsByAlignment 
+         echo ------------ > Do shift-items by align ----------->
+      Endif   
+
+      ResetImageShift 
+      SetImageShift 0 0
+      ReportStageXYZ sx sy sz
+      echo stage $sx $sy $sz
+   EndLoop 
+
+EndFunction
+EndMacro
+Macro	5
+ScriptName AfterTakeSquare
+
+# ============= Parameters =============
+CallFunction EMProperties::LoadAdditionalProperties
+
+# ===================================
+
+#Run this script just once
+#end of take square 
+
+ReportNavFile 1
+NAVIGATOR_PATH = $RepVal3
+
+DoesFileExist $NAVIGATOR_PATHFocus_position.txt
+dofile = $RepVal1
+
+If $dofile == 1
+   ReadTextFile vector $NAVIGATOR_PATHFocus_position.txt
+   Echo Read Vector from $NAVIGATOR_PATHFocus_position.txt
+
+Else
+   Try 
+      FindHoles 
+      UseHoleVectorsForMulti 0
+      ReportLastHoleVectors 0 v1x v1y v2x v2y
+
+      dist = SQRT ($v1x * $v1x + $v1y * $v1y) / 2 * 1.41
+      ang = ATAN ( $v1y $v1x ) + 45 + $adjust_ang
+      ang = MODULO ($ang 90)
+      ClearHoleFinder 
+      echo Set Focus position distance $dist, angle $ang
+
+      RunInShell echo $dist $ang > $NAVIGATOR_PATHFocus_position.txt
+
+   Catch 
+      echo Error in reading last hole vectors
+   EndTry 
+Endif 
+EndMacro
+Macro	6
+ScriptName ======== Tools  for data collection ==========
+EndMacro
+Macro	7
+ScriptName TestShot
+
+#===================================================================
+# Script for taking record with saving image and measuring ice thickness and exposure optimization.
+# LowDoseMode must be set up before running this script.
+# --------------------------------------------------------------------------------------------------------------------
+# <How to run>
+# 1. Move to the hole position.
+# 2. Adjust focus by "AutoFocusScript"
+# 3. Just click "Run" instead of Record.
+# --------------------------------------------------------------------------------------------------------------------
+# Originally imported from Nexperion repository.
+# Modified by TF and FM.
+# License: MIT License
+#===================================================================
+
+# ============================
+# Parameters
+# ============================
+measure_ice_thickness = 0 # 0: No, 1:Yes
+show_optimized_doseFrac = 1 # 0: No, 1: Yes
+target_total_dose = 45 # [e/A^2]
+target_dose_per_frame = 1 # [e/frame]
+recordCam = 2  #2 for k2/3
+
+# ============================
+# Main
+# ============================
+
+SuppressReports
+CallFunction EMProperties::LoadAdditionalProperties
+
+GoToLowDoseArea R
+
+If $hasOmegaFilter == 0
+    measure_ice_thickness = 0
+EndIf
+
+
+Echo ======= Start TestShot =======
+
+# Set save folder
+ReportNavFile 1
+NAVIGATOR_PATH = $repVal3
+doseCheck_dir @= TestShot
+path_to_doseCheck = $NAVIGATOR_PATH$doseCheck_dir
+RunInShell mkdir $path_to_doseCheck
+
+img_count_file @= img_count.txt
+path_to_img_count @= $path_to_doseCheck\$img_count_file
+
+Try 
+    ReadTextFile img_count $path_to_img_count
+Catch
+    img_count = 0
+EndTry
+
+img_count = $img_count + 1
+
+img_file @= $path_to_doseCheck\$img_count.jpg
+img_file_mrc @= $path_to_doseCheck\$img_count.mrc
+img_info_file @= $path_to_doseCheck\$img_count_info.txt
+fft_img  @= $path_to_doseCheck\$img_count_FFT.jpg
+
+    ReportBinning R
+    bins = $RepVal1
+
+# Recommended dose rate
+If ($recordCam == 1)
+    thresh_dose = 8.0
+    # Set camera params
+    SetBinning R 1
+    Echo ===> Binning is set to 1
+
+ElseIf ($recordCam == 2)
+    ReportK3CDSmode
+    If ($repVal1 == 1)
+        thresh_dose = 16.0
+    Else
+        thresh_dose = 15.0
+    EndIf
+    # Set camera params
+    SetBinning R 1
+    Echo ===> Binning is set to 1
+
+ElseIf ($recordCam == 3)
+    thresh_dose = 3.5
+    # Set camera params
+    SetBinning R 1
+    Echo ===> Binning is set to 2
+
+ElseIf ($recordCam == 4)
+    thresh_dose = 40
+    # Set camera params
+    SetBinning R 1
+    Echo ===> Binning is set to 2
+
+Else
+    Echo ===> No detector type of $recordCam.
+    Exit
+EndIf
+
+#KeepCameraSetChanges R
+
+ReportTargetDefocus TD
+
+ReportEnergyFilter 
+initailslit_status = $repVal3
+
+# Take record and measure ice thickness
+ice_thickness = 1
+GoToLowDoseArea R
+If $measure_ice_thickness == 1
+    # SlitIn
+    SetDoseFracParams R 0 0 0 0 0
+    SetSlitIn 1
+    Delay 2 sec
+    UpdateLowDoseParams R
+    R
+    RestoreLowDoseParams R
+    ElectronStats A
+    electron_count = $repVal5  # * 4 ## add by FM ,4 25.04.01
+    Copy A B
+
+    # Slit out
+    ImageProperties A
+    exposure = $repVal4
+    If $exposure > 2
+        SetExposure R 2
+    EndIf
+    SetDoseFracParams R 0 0 0 0 0
+    SetSlitIn 0
+    UpdateLowDoseParams R
+    R
+    ElectronStats A
+    electron_count_NoSlit = $repVal5
+    RestoreCameraSet R
+    RestoreLowDoseParams R
+
+    ice_thickness = $electron_count / $electron_count_NoSlit
+    If $ice_thickness > 1
+        ice_thickness = 1
+    EndIf
+
+    Copy B A
+Else
+    R
+    ElectronStats A
+    electron_count = $repVal5
+EndIf
+
+
+
+# Save image
+SaveToOtherFile A JPG NONE $img_file
+SaveToOtherFile A MRC NONE $img_file_mrc
+# Show FFT
+FFT A
+Copy A F
+SaveToOtherFile F JPG NONE $fft_img
+RunInShell echo $img_count > $path_to_img_count
+
+# Imaging info
+ImageProperties A
+bin = $repVal3
+exposure = $repVal4
+pixsize = $repVal5 * 10
+
+dose_rate = ( $electron_count / ($pixsize * $pixsize) ) / $ice_thickness
+total_dose = $dose_rate * $exposure
+solved_exposure = $target_total_dose / $dose_rate
+solved_frame_num = NEARINT ($target_total_dose / $target_dose_per_frame)
+solved_frame_time = $solved_exposure / $solved_frame_num
+
+Echo DEBUG $initailslit_status
+GoToLowDoseArea R
+SetLDContinuousUpdate 1
+SetSlitIn $initailslit_status
+Delay 3
+SetLDContinuousUpdate 0
+
+ReportAlpha alpha
+ReportSpotSize spot_size
+ReportPercentC2 brightness
+ReportMag mag
+ReportStageXYZ stage_x stage_y stage_z
+
+RunInShell echo $img_count > $img_count_file
+
+# Report imaging info
+Echo ----------------------------------------------------------------
+RunInShell echo ---------------------------------------------------------------- >> $img_info_file
+
+If $recordCam == 1
+    Echo Detector type : K2
+    RunInShell echo Detector type : K2 >> $img_info_file
+ElseIf $recordCam == 2
+    Echo Detector type : K3
+    RunInShell echo Detector type : K3 >> $img_info_file
+ElseIf $recordCam == 3
+    Echo Detector type : DE64
+    RunInShell echo Detector type : DE64 >> $img_info_file
+ElseIf $recordCam == 4
+    Echo Detector type : Apollo
+    RunInShell echo Detector type : Apollo >> $img_info_file
+Else
+    Echo Detector type : Other
+    RunInShell echo Detector type : Other >> $img_info_file
+EndIf
+
+
+Echo Image number : $img_count
+Echo Spot : $spot_size
+Echo Angle : $alpha
+Echo Binning : $bin
+Echo Pixel size (at x$mag) : $pixsize [A/px]
+Echo Exposure time : $exposure [sec]
+Echo Target Defocus : $TD [um]
+Echo Acquisition point (X, Y, Z) : $stage_x $stage_y $stage_z [um]
+
+RunInShell echo Image number : $img_count >> $img_info_file
+RunInShell echo Spot : $spot_size >> $img_info_file
+RunInShell echo Angle : $alpha >> $img_info_file
+RunInShell echo Binning : $bin >> $img_info_file
+RunInShell echo Pixel size (at x$mag) : $pixsize [A/px] >> $img_info_file
+RunInShell echo Exposure time : $exposure [sec] >> $img_info_file
+RunInShell echo Target Defocus : $TD [um] >> $img_info_file
+RunInShell echo Acquisition point (X, Y, Z) : $stage_x $stage_y $stage_z [um] >> $img_info_file
+
+# Report dose info
+If ($recordCam == 1) OR ($recordCam == 2) OR ($recordCam == 3) OR ($recordCam == 4)
+    Echo ----------------------------------------------------------------
+    RunInShell echo ---------------------------------------------------------------- >> $img_info_file
+
+    Echo Dose rate on detector : $electron_count [e/px/s]
+    Echo Dose rate on specimen : $dose_rate [e/A^2/s]
+    Echo Total dose on specimen : $total_dose [e/A^2]
+
+    RunInShell echo Dose rate on detector : $electron_count [e/px/s] >> $img_info_file
+    RunInShell echo Dose rate on specimen : $dose_rate [e/A^2/s] >> $img_info_file
+    RunInShell echo Total dose on specimen : $total_dose [e/A^2] >> $img_info_file
+
+    If $measure_ice_thickness == 1
+        Echo Ice thickness : $ice_thickness (Ratio : SlitIn / SlitOut)
+        RunInShell echo Ice thickness : $ice_thickness >> $img_info_file (Ratio : SlitIn / SlitOut)
+    EndIf
+
+
+
+    If $show_optimized_doseFrac == 1
+        Echo ----------------------------------------------------------------
+        RunInShell echo ---------------------------------------------------------------- >> $img_info_file
+        Loop 10
+            If ( MODULO ($solved_frame_num 2) == 0 )
+                actual_dose_per_frame = $target_total_dose / $solved_frame_num
+                Echo Optimized exposure time (Target total dose : $target_total_dose [e/A^2]) : $solved_exposure [sec]
+                Echo Optimized frame time (Target dose per frame : $target_dose_per_frame [e/A^2/frame]) : $solved_frame_time [sec]
+                Echo Number of frames : $solved_frame_num
+                Echo Dose per frame : $actual_dose_per_frame [e/A^2/frame]
+
+                RunInShell echo Optimized exposure time (Target total dose : $target_total_dose [e/A^2]) : $solved_exposure [sec] >> $img_info_file
+                RunInShell echo Optimized frame time (Target dose per frame : $target_dose_per_frame [e/A^2/frame]) : $solved_frame_time [sec] >> $img_info_file
+                RunInShell echo Number of frames : $solved_frame_num >> $img_info_file
+                RunInShell echo Dose per frame : $actual_dose_per_frame [e/A^2/frame] >> $img_info_file
+
+                If ($recordCam == 1) AND ($solved_frame_time < 0.1)
+                    Echo !!! You must set longer frame time for K2!
+                    Echo !!! Check dose again with reduced beam intensity!
+
+                    RunInShell echo !!! You must set longer frame time for K2! >> $img_info_file
+                    RunInShell echo !!! Check dose again with reduced beam intensity! >> $img_info_file
+
+                    OKBox "!!! You must set longer frame time for K2! Check dose again with reduced beam intensity!"
+                ElseIf ($recordCam == 3)
+                    Echo ===> You need to set the parameters manually. (DE camera)
+                Else
+                    YesNoBox Set optimized parameters? "Exposure time: $solved_exposure [s]" "Frame time: $solved_frame_time [s]"
+                    If $repVal1 == 1
+                        SetExposure R $solved_exposure
+                        SetFrameTime R $solved_frame_time
+                        SetBinning R $bins
+                        echo $bins binnds
+                        KeepCameraSetChanges
+                    EndIf
+                EndIf
+
+                Break
+            Else
+                solved_frame_time = $solved_frame_time * 0.99 
+                solved_frame_num = NEARINT ($solved_exposure / $solved_frame_time)
+            EndIf
+        EndLoop
+
+    EndIf
+    
+EndIf
+
+Echo ===> Finish
+EndMacro
+Macro	8
+ScriptName TakeHoleTemplate
+
+# ----------------------------------------------------------------------
+# Summary (one line):
+# Capture a View image as a hole template and save it next to the current Navigator file, then reset Image Shift to 0 0.
+#
+# What this script does (overview):
+# - Assumes Low Dose is already configured, switches to View area, and acquires a View image.
+# - Reads the current Navigator file location and builds an output path "hole_template.mrc" in the same folder.
+# - Copies the acquired image to buffer T (for convenience) and saves buffer A as an MRC file to that path.
+# - Restores the View camera settings and resets Image Shift to (0, 0) at the end.
+#
+# Author: F.M. (JEOL Ltd.) / TF
+# Date: 2025-12-24
+#
+# License: MIT License
+# ----------------------------------------------------------------------
+#===================================================================
+# Script to take hole template image.
+# LowDoseMode must be set up before running this script.
+# --------------------------------------------------------------------------------------------------------------------
+# <How to run>
+# 1. Take View image.
+# 2. "Run" this scrpt.
+# --------------------------------------------------------------------------------------------------------------------
+# Made and modified by TF and FM.
+#===================================================================
+
+    # ============================
+    # Parameters
+    # ============================
+
+    exposure_time = 5
+    show_navigation = 0 # 0:No, 1: Yes
+
+    # ============================
+    # Main
+    # ============================
+    SuppressReports
+
+    Echo ============= Start TakeHoleTemplate =============
+    
+    # Set View mode
+    SetLowDoseMode 1
+    GoToLowDoseArea V
+    V    
+
+    # Set file path
+    ReportNavFile 1
+    NAVIGATOR_PATH = $repVal3
+    file_name @= hole_template.mrc
+    file_path @= $NAVIGATOR_PATH$file_name
+
+    # Set camera params
+    SetExposure V $exposure_time
+
+    # Take View image
+    V
+    Copy A T
+
+    # Save file
+    SaveToOtherFile A MRC NONE $file_path
+
+    # Reset camera params
+    RestoreCameraSet V
+
+    # Result
+    Echo ===> Finish TakeHoleTemplate.
+    Echo ===> Hole template image was saved as $file_path
+
+    # Set ImageShift 0 0
+    SetImageShift 0 0
+    Echo ===> ImageShift is set to 0 0
+EndMacro
+Macro	9
+ScriptName AlignToHoleByYoneo
+# ----------------------------------------------------------------------
+# Summary (one line):
+# Iteratively align the microscope to a target hole using template matching in View Low Dose mode.
+#
+# What this script does (overview):
+# - Assumes Low Dose mode is already configured and switches to the View area.
+# - Iteratively performs hole alignment by YoneoHole, with limits on
+#   maximum allowed stage shift and number of iterations.
+# - Stops when the hole position is sufficiently aligned or when the maximum
+#   iteration count is reached.
+#
+# Author: F.M. (JEOL Ltd.) / TF
+# Date: 2025-09-24
+#
+# License: MIT License
+# ----------------------------------------------------------------------
+#===================================================================
+# Align to the hole by YoneoHole
+# LowDoseMode must be set up before running this script.
+# --------------------------------------------------------------------------------------------------------------------
+# <How to run>
+# 1. Run YoneoHole.bat if you need.
+# 2. Then just "Run".
+#    This uses the hole alignment parameters in "Parameters".
+# --------------------------------------------------------------------------------------------------------------------
+# Made and modified by TF and FM.
+#===================================================================
+
+# ============================
+# Parameters
+# ============================
+
+# Threshold for realigning to hole by stage
+maxholeshift = 0.1 * 1000 #[um x 1000]
+
+# Maximum iteration for hole alignment
+max_align_iter = 5
+
+# ============================
+# Main
+# ============================
+# Initialize 
+SuppressReports
+
+grid_type = 1
+
+Echo ====== Start AlignToHole =======
+
+# Set View mode of LD
+SetLowDoseMode 1
+GoToLowDoseArea V
+
+
+# Start hole alignment
+CallFunction Funcs::AlignToHoleYoneo $maxholeshift $max_align_iter 
+EndMacro
+Macro	10
+ScriptName AlignHoleByFindOneHole
+# ----------------------------------------------------------------------
+# Summary (one line):
+# Find one hole in the View image and iteratively center it by applying Image Shift until within tolerance.
+#
+# What this script does (overview):
+# - Repeats up to 'iter_max' times:
+#   1) Acquire a View image into buffer A.
+#   2) Abort/skip if the image is too dark (mean counts check).
+#   3) Detect one hole in buffer A using FindAndCenterOneHole.
+#   4) Compute the pixel offset between the detected hole position and the image center.
+#   5) Convert that pixel offset to specimen coordinates using:
+#      - current camera FOV size, binning, optional K2/K3 scaling factor
+#      - CameraToSpecimenMatrix (based on current magnification index)
+#   6) If the required shift magnitude is below 'maxholeshift', declare success.
+#      Optionally reset Image Shift to (0,0) depending on 'resetIS'.
+#   7) Otherwise, apply ResetImageShift and repeat.
+# - If it cannot converge within 'ter_max', it marks the Navigator item as skipped and exits.
+#
+# Notes / cautions:
+# - 'maxholeshift' is defined twice in the parameter section; the later value overrides the earlier one.
+# - The K2/K3 factor handling (useK23) assumes a 2x scaling when needed; confirm for your camera setup.
+# - This method aligns by Image Shift (not stage) and relies on correct calibration of CameraToSpecimenMatrix.
+#
+# Author: F.M. (JEOL Ltd.) 
+# Date: 2025-12-24
+#
+# License: MIT License
+# ----------------------------------------------------------------------
+# Align to the hole by FindOneHole
+# LowDoseMode must be set up before running this script.
+# --------------------------------------------------------------------------------------------------------------------
+# <How to run>
+# 1. Then just "Run".
+#    This uses the hole alignment parameters in "Parameters".
+# --------------------------------------------------------------------------------------------------------------------
+
+# ====== Parameters ==========
+holesize = 1.2 # [um], hole size
+maxholeshift = 2
+ter_max = 5 # max iteration
+maxholeshift = 0.15 #[um] Threshold for aligning to hole by stage
+useK23 = 0  #use K2, k3
+resetIS = 0  # 0: not Reset image shift, so apply image shift after align hole.  1: Reset image shift after align hole
+# ==========================
+
+it0 = 0
+
+Loop $ter_max it
+   View 
+
+   # ======= Judge dark image or not ========
+   ReportMeanCounts A
+   mean_count = $RepVal1
+   If $mean_count < 3
+      echo !!!!!!!!!! Failed Hole Alignment  !!!!!!!!!
+      skip_message @= "Skipped. align Hole failed"
+      CallFunction Funcs::AnnotateSkipItem $skip_message
+      SkipAcquiringNavItem 1
+      Exit 
+   EndIf
+
+   ############# Calculate image shift by FindAndCenterOneHole ##############
+   ReportCameraSetArea V
+   lenX = $RepVal1
+   lenY = $RepVal2
+   
+   ReportBinning V
+   bin = $RepVal1
+
+   ## Find hole and Center a hole ##
+   FindAndCenterOneHole A $holesize 0 3
+
+   shiftX = $lenX / 2 - $RepVal1
+   shiftY = $lenY / 2 - $RepVal2
+   echo --> $it times 
+   
+   ReportMagIndex 
+   magindex = $RepVal1
+   CameraToSpecimenMatrix $magindex
+   XpX = $RepVal1
+   XpY = $RepVal2
+   YpX = $RepVal3
+   YpY = $RepVal4
+   
+   factor = 1
+   if $useK23 == 1
+      factor = 2
+   Endif 
+   
+   Xin = $shiftX * $bin * $factor
+   Yin = $shiftY * $bin * $factor * -1
+   X = ( $Xin * $XpX + $Yin * $XpY ) * -1
+   Y = ( $Xin * $YpX + $Yin * $YpY ) * -1
+   echo $X $Y for imageshift
+   totalshift = SQRT ( $X * $X + $Y * $Y )  
+   If $totalshift < $maxholeshift 
+      echo -----  Succeed in hole alignment ------
+      if $resetIS == 1
+         SetImageShift 0 0
+      Endif 
+
+      Break 
+   Endif 
+    ############# Calculate image shift by FindAndCenterOneHole ##############
+
+   ResetImageShift 
+
+   it0 = $it
+EndLoop
+
+If ( $it0 == $ter_max )
+   echo !!!!!!!!!! Failed Hole Alignment  !!!!!!!!!
+   skip_message @= "Skipped. align Hole failed"
+   CallFunction Funcs::AnnotateSkipItem $skip_message
+   SkipAcquiringNavItem 1
+   Exit 
+Endif 
+
+View
+EndMacro
+Macro	11
+ScriptName AlignHoleByTemplate
+
+# ----------------------------------------------------------------------
+# Summary (one line):
+# Align the current View image to a previously saved hole-template (buffer T) by template matching, and re-center the Navigator item by stage (ShiftItemsByMicrons); optionally finish with Image Shift.
+#
+# What this script does (overview):
+# 1) Ensures EMProperties additional variables are loaded (LoadAdditionalProperties).
+# 2) Ensures a hole-template image exists in the specified buffer (default: T):
+#    - If buffer T already has an image, it uses it.
+#    - Otherwise it reads 'hole_template.mrc' from the Navigator folder, or falls back to a fixed path.
+# 3) Runs iterative hole alignment (up to max_align_iter times):
+#    - Takes/updates a View image (Low Dose area V).
+#    - Uses AlignTo <template_buffer> to template-match the current View image against the hole template.
+#    - Reads the alignment shift (ReportAlignShift), converts it to specimen X/Y (nm) with flip correction.
+#    - If the required correction is small enough (< maxholeshift), it declares success.
+# 4) When it succeeds, it applies the final correction by moving the Navigator item position:
+#    - ShiftItemsByMicrons diff_x diff_y
+#    - Also updates accum_item_shiftX/Y so later group changes can be reset consistently.
+# 5) Safety/robustness:
+#    - If the View image is too dark, the item is marked skipped and acquisition is stopped.
+#    - If template matching repeatedly produces huge shifts (>= 500 nm) too many times, it aborts and skips.
+#
+# Notes / cautions:
+# - Units are mixed intentionally:
+#   * dx/dy from template match are treated as specimen shift in [nm] (after flip), and holeshift is [nm].
+#   * diff_x/diff_y returned by Funcs::GetAppendedShift appear to be in [microns] (since ShiftItemsByMicrons uses microns).
+#   Make sure Funcs::GetAppendedShift truly returns microns; otherwise the final ShiftItemsByMicrons would be wrong-scale.
+# - Variable name mismatch: the script prints "X:$dx Y:$dy" but the function returns diff_x/diff_y/holeshift/...
+#   (It prints $dx/$dy but those are local to DetectHoleAndMove; the Echo lines in AlignToHole probably intended $diff_x/$diff_y.)
+# - Template buffer default is T. If T is overwritten elsewhere, alignment will be wrong.
+# - The fallback hole template path is hard-coded (hole_file2). Confirm it exists on every system.
+# - maxholeshift is defined as 0.2*1000 [um x 1000] which equals 200 [nm] in the same "x1000" convention;
+#   but holeshift is computed in [nm]. Confirm the threshold is consistent with holeshift units.
+#
+# Author: T.F. / F.M. (JEOL Ltd.)
+# Date: 2025-12-24
+# License: MIT License
+# ----------------------------------------------------------------------
+
+# ============================
+# Parameters
+# ============================
+
+# Threshold for realigning to hole by stage
+maxholeshift = 0.2 * 1000 #[um x 1000]
+
+# Maximum iteration for hole alignment
+max_align_iter = 10
+
+# Use IS for the final alignment?
+align_byIS = 1 # 0:No, 1:Yes
+
+# Template buffer for hole alignment
+template_buffer = T
+
+
+# ============================
+# Main
+# ============================
+
+# Start hole alignment
+
+CallFunction EMProperties::LoadAdditionalProperties
+
+Try
+  Show $template_buffer
+  Echo Sucess to read hole-template to $template_buffer
+Catch
+  CallFunction ReadHoleImage
+Endtry
+
+
+accum_item_shiftX = 0
+accum_item_shiftY = 0
+
+CallFunction AlignToHole $maxholeshift $max_align_iter $align_byIS $template_buffer
+
+
+# ============================
+# Functions
+# ============================
+
+Function ReadHoleImage 0 0
+   
+   CallFunction EMProperties::LoadAdditionalProperties
+   
+   ReportNavFile 1
+   NAVIGATOR_PATH = $repVal3
+   file_name @= hole_template.mrc
+   hole_file1 = $NAVIGATOR_PATH$file_name
+   
+   path_to_HoleImage @= C:\ProgramData\SerialEM\Data\HoleImage
+   hole_file2 = $path_to_HoleImage\tmp_12-13_Au.mrc
+   
+   # ====== Main =======
+   
+   Echo ====== Start AlignToHole =======
+   
+   # Set View mode of LD
+   SetLowDoseMode 1
+   GoToLowDoseArea V
+   
+   # Read hole image
+   open_again = 0
+   
+   Echo $template_buffer
+   Echo $hole_file2
+   
+   Try
+      ReadOtherFile 0 $template_buffer $hole_file1
+   Catch
+      Echo ===> Cannot find $hole_file1
+      Echo ===> Try to open $hole_file2
+      ## Temporaly
+      ReadOtherFile 0 $template_buffer $hole_file2
+   EndTry 
+   
+EndFunction
+
+
+Function AlignToHole 4 1 maxholeshift max_align_iter align_byIS template_buffer
+
+    GoToLowDoseArea V
+
+    process @= AlignToHole
+
+    # Initial settings
+    maxholeshift_tmp = $maxholeshift
+    align_byIS_tmp = $align_byIS
+    
+    CallFunction Funcs::SetFlipXY
+
+    ReportImageShift IS_X0 IS_Y0
+    ReportSpecimenShift sp_x0 sp_y0
+    align_err_count = 0
+
+    LowLimitCount = 0.1 # 10 for k3
+    diff_x = 0
+    diff_y = 0
+
+    ResetImageShift
+
+    # ======== Start Hole Aliginment ========
+    Echo ===> Running AlignToHole ...
+
+    # Take a first View
+    V
+
+
+   # ======= Judge dark image or not ========
+   ReportMeanCounts A
+   mean_count = $RepVal1
+   If $mean_count < 3
+      echo !!!!!!!!!! Failed Hole Alignment  !!!!!!!!!
+      skip_message @= "Skipped. align Hole failed"
+      CallFunction Funcs::AnnotateSkipItem $skip_message
+      SkipAcquiringNavItem 1
+      Exit 
+   EndIf
+
+
+    # Hole align iterration
+    Loop $max_align_iter iter
+
+        ReportMeanCounts
+        MeanCountsF = $reportedValue1
+        if ( $MeanCountsF < $LowLimitCount )
+            echo Counts too low
+            Break 
+        EndIf
+
+        CallFunction DetectHoleAndMove $iter
+        diff_x = $repVal1
+        diff_y = $repVal2
+        holeshift = $repVal3
+        lastShiftX = $repVal4
+        lastShiftY = $repVal5
+
+        Echo Hole align iter $iter
+        Echo Shift ---> X:$dx [nm] Y:$dy [nm]
+        Echo -------------------
+
+        # Success
+        If $holeshift < $maxholeshift
+            Echo ===> Hole align finished.
+            Echo ===> $diff_x $diff_y
+
+            # Realign items
+            ShiftItemsByMicrons $diff_x $diff_y
+            
+            # Accumulated item shift used for reset when group is changed.
+            accum_item_shiftX = $accum_item_shiftX - $diff_x
+            accum_item_shiftY = $accum_item_shiftY - $diff_y
+            diff_x = 0
+            diff_y = 0
+            
+            If $align_byIS == 0
+                SetImageShift 0 0 # IS is anyway 8000 8000 for stage shift
+            EndIf
+
+            maxholeshift = $maxholeshift_tmp
+            align_byIS = $align_byIS_tmp
+
+            Break
+        EndIf
+
+    EndLoop 
+
+EndFunction
+
+
+Function DetectHoleAndMove 2 0 iter
+
+   Echo ===> Hole detection by Template match.
+   
+   If $iter > 1
+      ResetImageShift
+      ReportSpecimenShift sp_x0 sp_y0
+      V
+   EndIf
+   
+   AlignTo $template_buffer
+   ReportAlignShift
+   
+   dx = $RepVal5 * $flipX # Shift on specimen X axis [nm]
+   dy = $RepVal6 * $flipY # Shift on specimen Y axis [nm]
+   holeshift = sqrt ( $dx * $dx + $dy * $dy )
+   
+   # For item realign
+   CallFunction Funcs::GetAppendedShift $sp_x0 $sp_y0
+   diff_x = $repVal1
+   diff_y = $repVal2
+   
+   If $holeshift >= 500
+      align_err_count = $align_err_count + 1
+   EndIf
+   
+   If $align_err_count >= 5
+        SetImageShift 0 0
+        skip_message @= "Skipped. Hole alignment failure."
+        CallFunction Funcs::AnnotateSkipItem $skip_message
+        Exit
+     EndIf
+     
+     lastShiftX = $dx / 1000
+     lastShiftY = $dy / 1000
+     
+     return $diff_x $diff_y $holeshift $lastShiftX $lastShiftY 
+     
+EndFunction
+EndMacro
+Macro	12
+ScriptName AutoFocusScript
+# ----------------------------------------------------------------------
+# Summary (one line):
+# Iterative autofocus helper: measures defocus in Low Dose Focus area, then corrects mainly by Z-stage moves (with tilt-aware Y compensation), and finally runs AutoFocus / updates Navigator Z if possible.
+#
+# What this script does (overview):
+# 1) Moves to Low Dose Focus area (F), records the target defocus, and initializes focus-related state.
+# 2) Saves the current stage position (init_x/init_y/init_z) as a safe “return point”.
+# 3) Repeats up to max_focus_iter times:
+#    - Takes a Focus exposure (G -1) and checks if the image is too dark (mean counts < 3).
+#      If dark: mark item skipped and exit.
+#    - Reads the measured autofocus value (measured_focus) and computes:
+#        defocus  = target_defocus - measured_focus
+#        abs_focus = |defocus|
+#        setting_z = current_z - measured_focus  (used for safety checks)
+#    - If abs_focus <= focus_th:
+#        declare success and run AutoFocus, then stop iterating.
+#    - Else if abs_focus is unrealistically tiny OR stage Z would be out of safe range:
+#        treat as error; return to initial stage position; annotate + skip item; exit.
+#    - Else (abs_focus > focus_th):
+#        do a Z-stage correction by moving diffz = defocus * 0.8 (a damping factor).
+#        If the stage is tilted beyond tilt_th degrees:
+#           compensate the Y position by diffy = sin(tilt)*Δz/2 to keep the same area in view.
+#        If it reaches the final iteration without converging:
+#           annotate + skip item; exit.
+# 4) After the loop, it tries to update the Navigator group/item Z values (UpdateGroupZ, UpdateItemZ).
+#
+# Notes / cautions / improvements:
+# - Units: focus_th is annotated [um]. This assumes ReportAutofocus returns microns in the same convention.
+# - The condition “abs_focus < 0.001” is treated as an error; that may also happen for a truly perfect focus,
+#   so confirm that this is really an indicator of a broken autofocus reading in your setup.
+# - “SkipAcquiringNavItem” is called once without an argument near the end:
+#     SkipAcquiringNavItem
+#   If your SerialEM expects “SkipAcquiringNavItem 1”, this line may fail or do nothing.
+# - The script has an “Else: adjust by OL” branch, but it is effectively unreachable because:
+#   * If abs_focus <= focus_th -> first branch
+#   * Else if abs_focus > focus_th -> stage-move branch
+#   So no remaining case is left for the OL branch.
+# - “setting_defocus” is used in the OL branch but is never initialized in this script.
+#   If you ever re-enable OL correction, initialize setting_defocus first (e.g., ReportDefocus or ReportTargetDefocus baseline).
+# - The tilt compensation uses SIN(tiltang)*Δz/2 and applies MoveStage twice. That is probably intentional for backlash/settling,
+#   but confirm whether you want the factor “/2” and the double move on your stage.
+#
+# Author: (as per your convention) T.F. / F.M. (JEOL Ltd.)
+# Date: 2025-12-24
+# License: MIT License
+# ----------------------------------------------------------------------
+
+# =============== Parameters =============== 
+focus_th = 0.8 #[um] threthold diffrent defocus value for stagemove 
+tilt_th = 1 # threathold applying tilt operation
+max_focus_iter = 7
+# ========================================= 
+
+
+echo -------- Start Autofocus --------
+
+GoToLowDoseArea F
+ReportTargetDefocus target_defocus
+SetEucentricFocus 
+ResetDefocus 
+
+ReportStageXYZ init_x init_y init_z
+
+sx = $init_x 
+sy = $init_y 
+sz = $init_z 
+
+Loop $max_focus_iter iter
+   delay 3 sec
+
+   G -1
+
+   ReportMeanCounts A
+   mean_count = $repVal1
+
+   If $mean_count < 3
+      skip_message @= "Skipped. AF by Z failed"
+      SkipAcquiringNavItem 1
+      CallFunction Funcs::AnnotateSkipItem $skip_message
+      Exit 
+   EndIf
+
+   ReportAutofocus measured_focus
+   ReportStageXYZ sx sy sz
+   setting_z = $sz - $measured_focus
+   defocus =  $target_defocus - $measured_focus
+   abs_focus = ABS ( $defocus )
+   echo  Target Z and measured focus $setting_z $measured_focus
+   
+   If ($abs_focus <= $focus_th)
+      Echo ===> Focusing was succeeded.
+      AutoFocus 
+
+      Break 
+   ElseIf ( $abs_focus < 0.001 ) OR ( $setting_z > 205 ) OR ( $setting_z < -205 ) 
+      echo !!!!!!!!! Error in Autofocus !!!!!!!  You should adjust eucentric height by manual OR obtain new gain-reference
+      MoveStageTo $init_x $init_y $init_z
+      echo !!!!!!!!! Skip autofocus $setting_z $measured_focus !!!!!!!!!
+      skip_message @= "Skipped. AF by Z failed"
+      CallFunction Funcs::AnnotateSkipItem $skip_message
+      SkipAcquiringNavItem 1
+      Exit 
+      
+      # Ajdust focus by Z for large defocus (>= $focus_error), only at stage is flat
+   ElseIf  ( $abs_focus > $focus_th)
+      Echo ===> Requires large change.
+      Echo ===> Focus is adjusted by stage movement.
+      
+      diffz = $defocus * 0.8
+      MoveStage 0 0 $diffz
+
+      # =============== Tilt operation for z-autofocus =============
+      ReportTiltAngle tiltang
+      abstilt = ABS ( $tiltang)
+      If $abstilt > $tilt_th
+         ReportStageXYZ csx csy csz
+         diffz2 = $csz - $sz
+         echo move stage $sz  to $csz in z
+         
+         diffy = SIN ( $tiltang ) * $diffz2 / 2
+         MoveStage 0 $diffy 0
+         MoveStage 0 $diffy 0
+      Endif 
+      # ========================================
+
+
+      Echo ---> Move to $sz [um]  $iter times
+      Delay 1 sec
+      
+      If $iter == $max_focus_iter
+         echo !!!!!!!!! Skip autofocus $setting_z $measured_focus !!!!!!!!!
+         skip_message @= "Skipped. AF by Z failed too large"
+         CallFunction Funcs::AnnotateSkipItem $skip_message
+         SkipAcquiringNavItem 
+         Exit
+      EndIf
+      
+   Else
+      Echo ===> Focus is adjusted by OL.
+      setting_defocus = $setting_defocus + $defocus
+      SetDefocus $setting_defocus
+   Endif 
+   #      Eucentricity -1 0
+   
+   
+EndLoop 
+
+Try 
+   UpdateGroupZ
+   UpdateItemZ 
+Catch 
+
+   echo Pass to update Z
+
+EndTry 
+echo -------- Finished Autofocus --------
+EndMacro
+Macro	14
+ScriptName FindSquareContour
+
+# ----------------------------------------------------------------------
+# Summary (one line):
+# From a square map in buffer E, iteratively run AutoContourGridSquares with increasing histogram threshold until exactly one square polygon is produced in the Navigator, deleting extra polygons when too many are found.
+#
+# What this script is trying to do (overview):
+# 1) Open the Navigator and record how many items already exist (baseCount).
+# 2) Load a Navigator map from buffer E (your square map) so contouring operates on that map.
+# 3) Try up to 10 iterations:
+#    - Run AutoContourGridSquares using a histogram fraction threshold (histFrac).
+#    - Read the autocontour statistics (LowCut, UpCut, Med).
+#    - Convert detected squares into polygons via MakePolygonsAtSquares (with minSizeCut/sd).
+#    - Count how many Navigator items were added compared to baseCount:
+#        * If +1 item: success → stop.
+#        * If >+1 items: delete those new items and try again (aiming to leave only one).
+#        * If 0 items: increase histFrac and retry.
+# 4) After the loop, if it never hit exactly +1 item, it runs the contouring once more and then deletes extras.
+#
+# Important issues / likely bugs to fix:
+# - Variable typo: you define “histFrac = $starthistFrac” but call AutoContourGridSquares with “$histFracVar”.
+#   That variable is never defined, so AutoContourGridSquares is probably using 0 or failing silently depending on SerialEM behavior.
+#   It should likely be:  AutoContourGridSquares $buf 1500 $histFrac 0 $SizeMin $SizeMax 0
+#
+# - Deleting logic assumes “diff” is correct in the final fallback block, but if the loop exits by “histFrac > 1.0”,
+#   “diff” may be stale or undefined. You should recompute nowCount/diff after the final run before deleting.
+#
+# - You set minSizeCut twice:
+#     minSizeCut = -1 (earlier)
+#     minSizeCut = 10 (later)
+#   The first assignment is overwritten; keep only one to avoid confusion.
+#
+# - You define a size-step logic (SizeMin/SizeMax/minSizeStep/maxSizeCut) but never actually update SizeMin/SizeMax in the loop.
+#   Right now only histFrac changes; if you intended to sweep SizeMin too, you need to modify it each iteration.
+#
+# - SuspendNavRedraw 1 is inside the loop, but SuspendNavRedraw 0 is only after the loop.
+#   If an Exit happens inside the loop (not present now), redraw would remain suspended. Not critical here but keep in mind.
+#
+# Parameter notes:
+# - buf = E: expects the square montage/map to already be in buffer E.
+# - starthistFrac: starting threshold; if too low, you get too many squares; if too high, you may get none.
+# - minSizeCut / sd: passed to MakePolygonsAtSquares; your comments say “minSizeCut small is better” and “sd larger is better”.
+#   These likely affect polygon filtering/merging; confirm in SerialEM docs for MakePolygonsAtSquares.
+#
+# Author: (your convention) F.M. (JEOL Ltd.)
+# Date: 2025-12-24
+# License: MIT License
+# ----------------------------------------------------------------------
+
+# ===== Parameters =====
+buf = E             # buffer containing the square map (A or B)
+reduceTo = 1.2       # autocontour reduction target (microns per pixel if <10)
+starthistFrac = 0.1       # histogram fraction threshold for AutoContourGridSquares
+SizeMin = 20   # start from a large minimum linear size (microns)
+SizeMax = 130     # lower bound of minimum size to try
+minSizeStep = -5     # step for minimum size (negative to decrease)
+maxSizeCut = -1      # maximum size cutoff; -1 to use stored/dialog
+verboseLog = 1       # 1 to echo progress
+
+minSizeCut = 10 #Small value is beter
+sd = 300 #larger value is beter
+
+# ===== Prep =====
+OpenNavigator
+ReportNumTableItems
+baseCount = $RepVal1
+
+# =================
+LoadNavMap $buf
+
+histFrac = $starthistFrac
+
+Loop 10
+   flg = 0
+   SuspendNavRedraw 1
+
+   Try 
+      AutoContourGridSquares $buf 1500 $histFracVar 0 $SizeMin $SizeMax 0
+      ReportAutocontourStats LowCut UpCut Med
+      MakePolygonsAtSquares $LowCut $UpCut $minSizeCut $sd 1 0.0
+   Catch 
+      echo Failed in Contour threshold $histFrac
+   EndTry 
+
+   ReportNumTableItems 
+   nowCount = $reportedValue1
+   diff = $nowCount  - $baseCount
+   if $diff == 1 
+      echo Finish for making polygon
+      flg = 1
+      Break 
+   ElseIf $diff > 1 
+      # Delete any items created in previous iteration
+      Loop $diff
+         DeleteNavigatorItem -1
+      EndLoop 
+      echo Cotinue find until one polygon
+   Else
+      histFrac = $histFrac + 0.15
+      If ($histFrac > 1.0 )
+         Break 
+      Endif 
+   Endif 
+   
+EndLoop 
+
+SuspendNavRedraw 0
+If $flg != 1
+   AutoContourGridSquares $buf 1500 $histFracVar 0 $SizeMin $SizeMax 0
+   ReportAutocontourStats LowCut UpCut Med
+   MakePolygonsAtSquares $LowCut $UpCut $minSizeCut $sd 1 0.0
+
+      Loop ($diff - 1)
+         DeleteNavigatorItem -2
+      EndLoop 
+
+Endif 
+EndMacro
+Macro	15
+ScriptName DeleteAllPolygons
+
+# ----------------------------------------------------------------------
+# Summary (one line):
+# Scan all Navigator items, collect indices of polygon items, then delete them (in reverse order) so index shifts don’t break deletion.
+#
+# What it does (overview):
+# 1) Get total number of Navigator table items (numItems).
+# 2) If 0, print a message and effectively do nothing (note: currently it does not Exit).
+# 3) Loop i=1..numItems:
+#    - ReportOtherItem i to read item properties into RepVal’s.
+#    - RepVal5 is treated as “type”; type==1 is assumed to mean “polygon”.
+#    - Store polygon indices into an array (polyIdex).
+# 4) Delete polygons in reverse order using DeleteNavigatorItem idx.
+#
+# Date: 2025-12-24
+# Author: F.M. (JEOL Ltd.)
+# License: MIT License
+# ----------------------------------------------------------------------
+
+# ========= Delete all polygon in the Navigator file =====
+
+ReportNumTableItems 
+numItems = $RepVal1
+echo $numItems iters
+If ($numItems == 0 )
+   Echo Navigator is empy, nothing to delete.
+Endif 
+
+#loop 
+SuspendNavRedraw 
+NewArray polyIdex 0 0
+
+DoLoop i 1 $numItems
+   Try 
+      ReportOtherItem $i
+   Catch 
+      Break 
+   EndTry 
+   type = $RepVal5
+   If ($type == 1) #if polygon
+      echo Polystong $i
+      AppendToArray polyIdex $i
+   Endif 
+EndLoop 
+SuspendNavRedraw 0
+
+nPoly = $#polyIdex
+#get number of array
+
+
+DoLoop k ($nPoly ) 1 -1
+   idx = $polyIdex[$k]
+   DeleteNavigatorItem $idx
+EndLoop 
+echo All polygon items have been deleted 
+EndMacro
+Macro	16
+ScriptName FindHolesVecMakeNavItemAndComb
+# ----------------------------------------------------------------------
+# Summary (one line):
+# Detect holes on the current map, optionally apply the map item’s stored hole-vector geometry, create Navigator points at the holes, then combine them into Multiple Records (Multi-shot) groups.
+#
+# What it does (overview):
+# 1) FindHoles
+#    - Runs SerialEM’s hole-finding on the currently active map/buffer using the current hole-finding settings.
+#    - Result: a list of hole positions becomes available for subsequent commands.
+#
+# 2) UseMapItemHoleVectors -1
+#    - Tells SerialEM to use “hole vectors” associated with a Navigator Map item.
+#    - The argument “-1” usually means “use the current/active map item” (i.e., the map you are working on now).
+#    - Effect: hole pattern geometry (spacing/orientation) can be taken from the map item’s stored vectors instead of re-deriving it each time.
+#
+# 3) MakeNavPointsAtHoles 0 -999999 -999999 -1
+#    - Converts the detected holes into actual Navigator points.
+#    - The exact meaning of the arguments depends on SerialEM’s command definition, but the intent is:
+#      - create points at all found holes,
+#      - use default / “no limit” options (the -999999 values are commonly used as “don’t constrain” sentinels),
+#      - and apply to the current map item (the final -1).
+#    - Result: new Navigator entries (points) appear at hole positions.
+#
+# 4) CombineHolesToMulti 0
+#    - Combines the created hole points into “Multiple Records” acquisition groups (multi-shot per hole).
+#    - The “0” commonly indicates using current Multiple Records settings / default combine behavior.
+#    - Result: Navigator points are grouped so that acquisition will run multiple shots per hole using SerialEM’s Multi-shot logic.
+#
+# Notes / things to watch:
+# - This script assumes the current map is already selected/loaded and the hole-finding parameters are appropriate for that map magnification and grid type.
+# - If FindHoles fails (bad contrast / wrong binning / wrong hole size), downstream steps will still run but may create no points.
+# - “UseMapItemHoleVectors” is only useful if the map item actually has valid hole vectors stored; otherwise it may have no effect.
+# ----------------------------------------------------------------------
+
+FindHoles 
+UseMapItemHoleVectors -1
+MakeNavPointsAtHoles 0 -999999 -999999 -1 
+CombineHolesToMulti 0
+EndMacro
+Macro	17
+ScriptName Count_TotalMovieRecord
+# ----------------------------------------------------------------------
+# Summary (one line):
+# Report how many holes (and how many acquisition items) are scheduled,
+# estimate the total number of Record movies, and store the result.
+#
+# Overview:
+# - Queries the Navigator acquisition plan.
+# - Prints a summary of planned acquisitions.
+# - Saves the estimated total number of Record movies to a variable.
+#
+# Notes:
+# - The estimated number of Record movies depends on Multiple Records
+#   (e.g. multi-shot-per-hole) settings.
+# - If no holes or Acquire flags are set, values may be zero.
+# Date: 2025-12-24
+#
+# Author: F.M. (JEOL Ltd.)
+# License: MIT License
+# ----------------------------------------------------------------------
+
+ReportNumHoleAcquire 
+
+Echo ========== Summary for planned acqusition ========
+Echo Acquire items counte: $RepVal2
+Echo Total holes to be acquired; $RepVal1 
+Echo Estimated total Record movies: $RepVal3
+
+totalRecord = $RepVal3
+EndMacro
+Macro	18
+ScriptName SetNumAcquireMovie
+
+# ========= Total planned record images and turn off acquire beyond threshold =====
+# Summary:
+# - Estimate shots-per-hole from current plan
+# - Walk Navigator table in order, keep Acquire ON until cumulative images exceeds setTotal
+# - Turn Acquire OFF for all subsequent items (unless dryrun=1)
+#
+# Notes:
+# - Assumes RepVal3/RepVal1 gives shots-per-hole (i.e., MultiShot etc. reflected)
+# - Requires Navigator items to have NavNumHoles set (holes count per item)
+#
+# Date: 2025-12-24
+# Author: F.M. (JEOL Ltd.)
+# License: MIT License
+# ----------------------------------------------------------------------
+
+# ======== Parameters ==========
+setTotal = 10000   # total number of Record movies to keep (estimate)
+dryrun = 0         # 1: do not modify acquire flag, just report; 0: apply changes
+# ==============================
+
+# ---- get current acquisition summary ----
+ReportNumHoleAcquire
+
+Echo ========== Summary for planned acquisition ========
+Echo Acquire items count: $RepVal2
+Echo Total holes to be acquired: $RepVal1
+Echo Estimated total Record movies: $RepVal3
+
+# ---- guard against division by zero ----
+totalHoles = $RepVal1
+totalMovies = $RepVal3
+
+If ( $totalHoles <= 0 )
+   Echo No holes are planned (RepVal1 <= 0). Nothing to do.
+   Exit
+EndIf
+
+# shots-per-hole (can be fractional)
+shotPerHole = $totalMovies / $totalHoles
+Echo shotsPerHole = $shotPerHole
+
+# ---- walk Navigator table in order, keep items until cumulative exceeds setTotal ----
+ReportNumTableItems
+nItems = $RepVal1
+
+cumImages = 0
+crossed = 0
+lastKeepIndex = 0
+keptAcquire = 0
+turnOff = 0
+
+SuppressReports 1
+DoLoop its 1 $nItems
+   # Read the item and its hole count
+   ReportOtherItem $its
+   holesHere = $navNumHoles
+
+   If ( $holesHere <= 0 )
+      Continue
+   EndIf
+
+   imageHere = $holesHere * $shotPerHole
+
+   If ( $crossed == 0 )
+      cumImages = $cumImages + $imageHere
+      lastKeepIndex = $its
+      keptAcquire = $keptAcquire + 1
+
+      If ( $cumImages > $setTotal )
+         crossed = 1
+         # (This item is still kept, as "first exceeding item")
+      EndIf
+   Else
+      If ( $dryrun == 0 )
+         SetItemAcquire $its 0
+      EndIf
+      turnOff = $turnOff + 1
+   EndIf
+EndLoop
+SuppressReports 0
+
+# ---- report after modifications ----
+ReportNumHoleAcquire
+Echo ========== Summary after applying threshold ========
+Echo Kept acquire items (count): $keptAcquire
+Echo Turned off acquire items (count): $turnOff
+Echo Last kept item index: $lastKeepIndex
+Echo Acquire items count (now): $RepVal2
+Echo Total holes to be acquired (now): $RepVal1
+Echo Estimated total Record movies (now): $RepVal3
+EndMacro
+Macro	20
+ScriptName SetFocusAndTrialPosition
+
+# ==============================================================================
+# Summary:
+# Automatically set Focus (F) and Trial (T) Low Dose positions based on hole vectors
+# or reuse previously stored positions for reproducible data collection.
+#
+# Overview:
+# This script determines the Focus and Trial axis positions used in Low Dose mode.
+# If a previously saved focus position file (Focus_position.txt) exists in the
+# Navigator directory, the script reads the stored distance and angle and applies
+# them directly to both Focus and Trial areas to ensure reproducibility.
+#
+# If the file does not exist, the script calculates the positions automatically
+# from the last detected hole vectors. The distance and angle are derived from
+# the hole lattice geometry, assuming a symmetric grid, and are then applied to
+# both Focus and Trial positions. This allows robust and automated positioning
+# without manual intervention.
+#
+# Date: 2025-12-24
+# Author: F.M.
+# Affiliation: JEOL Ltd.
+# License: MIT License
+# ==============================================================================
+
+# ============= Parameters =============
+CallFunction EMProperties::LoadAdditionalProperties
+
+# ===================================
+
+ReportNavFile 1
+NAVIGATOR_PATH = $RepVal3
+
+DoesFileExist $NAVIGATOR_PATHFocus_position.txt
+dofile = $RepVal1
+
+If $dofile == 1
+   ReadTextFile vector $NAVIGATOR_PATHFocus_position.txt
+   Echo Read Vector from $NAVIGATOR_PATHFocus_position.txt
+   holedist = $vector[1]
+   holeang = $vector[2]
+   
+   SetAxisPosition F $holedist $holeang
+   SetAxisPosition T $holedist $holeang
+Else
+   Try 
+
+      SetLowDoseMode 1
+      GoToLowDoseArea F
+
+      ReportLastHoleVectors 0 v1x v1y v2x v2y
+
+      dist = SQRT ($v1x * $v1x + $v1y * $v1y) / 2 * 1.41
+      ang = ATAN ( $v1y $v1x ) + 45 + $adjust_ang
+      ang = MODULO ($ang 90)
+      ClearHoleFinder 
+      echo Set Focus position distance $dist, angle $ang
+      SetAxisPosition F $dist $ang
+      SetAxisPosition T $dist $ang 
+
+   Catch 
+      echo Error in reading last hole vectors
+   EndTry 
+Endif 
+EndMacro
+Macro	21
+ScriptName Recalculating_FocusPosition_fromSqMap
+
+# ==============================================================================
+# Summary:
+# Recalculate Focus/Trial axis position from a loaded Square Map and save it for reuse.
+#
+# Overview:
+# This script loads the currently selected Navigator map (Square map), runs hole finding,
+# and derives the Focus/Trial offset (distance and angle) from the last measured hole
+# vectors. The computed parameters are written to Focus_position.txt in the Navigator
+# directory so that subsequent scripts can reuse the same Focus/Trial geometry for
+# consistent Low Dose positioning. Finally, it calls SetFocusAndTrialPosition to apply
+# the saved values to Focus (F) and Trial (T).
+#
+# Date: 2025-12-24
+# Author: F.M.
+# Affiliation: JEOL Ltd.
+# License: MIT License
+# ==============================================================================
+
+# ============= Parameters =============
+CallFunction EMProperties::LoadAdditionalProperties
+
+# ===================================
+
+ReportNavFile 1
+NAVIGATOR_PATH = $RepVal3
+LoadNavMap 
+
+FindHoles 
+#UseHoleVectorsForMulti 0
+ReportLastHoleVectors 0 v1x v1y v2x v2y
+
+dist = SQRT ($v1x * $v1x + $v1y * $v1y) / 2 * 1.41
+ang = ATAN2 ( $v1y $v1x ) + 45 + $adjust_ang
+ang = MODULO ($ang 90)
+ClearHoleFinder 
+echo Set Focus position distance $dist, angle $ang
+
+RunInShell echo $dist $ang > $NAVIGATOR_PATHFocus_position.txt
+delay 1 sec
+Call SetFocusAndTrialPosition
+EndMacro
+Macro	23
+ScriptName FullAutoAlignComaAndStig
+# ==============================================================================
+# Summary:
+# Fully automated coma/astig alignment on carbon area using hole vectors and hole alignment.
+#
+# Overview:
+# This script performs an automated workflow to run AlignComaAndStig at a carbon area
+# near the current hole position. It first loads parameters from EMProperties and then
+# determines an offset (delta_x, delta_y) derived from hole vectors (or from a previously
+# saved Focus_position.txt). It then runs a selected hole-alignment routine to ensure the
+# hole is centered, shifts to the carbon area by image shift, and repeatedly aligns the
+# carbon region by template matching. Finally, it runs AlignComaAndStig (quiet or normal),
+# and optionally returns to the original position after completion.
+#
+# Date: 2025-12-24
+# Author: F.M.
+# Affiliation: JEOL Ltd.
+# License: MIT License
+# ==============================================================================
+
+# ===== Parameters =====
+latticeMode = 0          # 0: rectangular -> use two base vectors (X,Y); 1: hex -> use first two (u,v)
+runQuiet = 0           # 1: suppress popups during alignment
+returnToHole = 1         # 1: go back to hole center after alignment
+whichAlignHole = 2      # Which hole alignmet do you use 0:Find One Hole, 1: Template (Buf T), 2: YoneoLocr
+
+CallFunction EMProperties::LoadAdditionalProperties
+
+# ===== End Parameters =====
+
+
+GoToLowDoseArea R
+
+ReportNavFile 1
+NAVIGATOR_PATH = $RepVal3
+
+DoesFileExist $NAVIGATOR_PATHFocus_position.txt
+dofile = $RepVal1
+
+If $dofile == 1
+   ReadTextFile vector $NAVIGATOR_PATHFocus_position.txt
+   Echo Read Vector from $NAVIGATOR_PATHFocus_position.txt
+   holedist = $vector[1]
+   holeang = $vector[2]
+
+   delta_x = COS ( $holeang ) * $holedist
+   delta_y = SIN ( $holeang ) * $holedist
+
+   echo Movestage --> X Y $delta_x $delta_y 
+Else
+   Try 
+
+      ReportLastHoleVectors 0 v1x v1y v2x v2y
+
+      dist = SQRT ($v1x * $v1x + $v1y * $v1y) / 2 * 1.41
+      ang = ATAN ( $v1y $v1x ) + 45 +$adjust_ang
+      ang = MODULO ($ang 90)
+      
+      delta_x = COS ( $ang ) * $dist 
+      delta_y = SIN ( $ang ) * $dist 
+
+      echo Movestage --> X Y $delta_x $delta_y using 
+   Catch 
+      echo Error in reading last hole vectors
+   EndTry 
+Endif 
+
+
+# ===== Run Align to Hole =====
+View 
+
+if $whichAlignHole == 0
+   Call AlignHoleByFindOneHole
+ElseIf $whichAlignHole == 1
+   Call AlignHoleByTemplate
+ElseIf $whichAlignHole == 2
+   Call AlignToHoleByYoneo
+Endif 
+
+
+# Move from hole center to carbon area
+#MoveStage $delta_x $delta_y
+ImageShiftByMicrons $delta_x $delta_y
+Delay 1 sec
+View 
+Copy A I
+ResetImageShift 
+
+Loop 2
+   Delay 1 sec
+   View 
+   AlignTo I
+   ResetImageShift 
+EndLoop 
+
+
+# ===== Run your coma/astig alignment script on carbon =====
+
+If ($runQuiet == 1)
+  Try
+    Call AlignComaAndStig
+  Catch
+    Echo AlignComaAndStig failed on carbon area (midpoint of two hole vectors).
+  EndTry
+Else
+  Call AlignComaAndStig
+EndIf
+
+# ===== Return to hole center if requested =====
+If ($returnToHole == 1)
+  MoveStageTo $sx0 $sy0 $sz0
+EndIf
+
+Echo Done: ran AlignComaAndStig at carbon midpoint 
+EndMacro
+Macro	24
+ScriptName AlignComaAndStig
+# ==============================================================================
+# Summary:
+# Coma-free alignment (CTF-based coma + OL astig correction) in Low Dose Record mode before acquisition.
+#
+# Overview:
+# This script is intended to be run on a carbon area (not UltrAuFoil) just before data collection.
+# It loads EMProperties, opens the gun/column valve, sets Record camera conditions, temporarily removes
+# the OL aperture, sets target defocus, performs autofocus (via AutoFocusScript), then runs CTF-based
+# astigmatism and coma corrections (FixAstigmatismByCTF / FixComaByCTF). After alignment, it reports the
+# final beam-tilt values, cycles Low Dose areas to normalize the state, and optionally restores the OL
+# aperture and prompts the user to save the Record deflector configuration.
+#
+# Date: 2025-12-24
+# Author: F.M. (JEOL Ltd.)
+# SPDX-License-Identifier: MIT
+# ==============================================================================
+
+#===================================================================
+# Script for coma-free alignment and OL astigmatism correction.
+#     It is better to run this script just before data collection.
+#     LowDoseMode must be set up before running this script.
+# --------------------------------------------------------------------------------------------------------------------
+# <How to run>
+# 1. Move stage to carbon area. This script will not work on UltrAuFoil.
+# 2. Roughly Adjust Z height.
+# 3. If the rotational center is far way off. Align rotational center between View and Record.
+# 4. "Run" this script.
+# --------------------------------------------------------------------------------------------------------------------
+# Made and modified by TF and FM.
+#===================================================================
+
+    # ============================
+    # Parameters
+    # ============================
+    # Set settling time
+    settle_time = 10 #[sec]
+    exp_time = 1 #[sec]
+
+    target_defocus = -1.4
+
+    setOLaptAtLast = 0 # 0: No, 1,2,3,4: OLapt number	
+    OLapt_type = 0
+
+    skip_dialogs = 0 # 0:No --> Popup dialog box, 1:Yes --> not shown popupdialog 
+    
+    # ============================
+    # Main
+    # ============================
+    CallFunction EMProperties::LoadAdditionalProperties
+
+    SetColumnOrGunValve 1
+
+    # ====== Set parameters ======
+    GoToLowDoseArea R    
+    ReportBeamTilt btx_init bty_init
+    Echo ===> Initial Beam-Tilt ( BTx: $btx_init, BTy: $bty_init )
+
+    SetExposure R $exp_time 
+    SetBinning R 2
+    SetDoseFracParams R 0 0 0 0 0
+   
+    # Remove OL apt
+    Plugin JEOL SetAptExpSize $OLapt_type 0
+
+    SetTargetDefocus $target_defocus
+
+
+    # -------- Auto focus on Record mode --------
+    SetEucentricFocus 
+    ResetDefocus 
+    ReportAxisPosition F orgdist organg
+    SetAxisPosition F 0 0
+    Call AutoFocusScript
+    SetAxisPosition F $orgdist $organg
+    # -----------------------------------------------------------
+
+    RestoreCameraSet R
+
+    # ====== AlignComa and Stig ======
+
+    Delay $settle_time sec
+
+    SetExposure R 1.0
+    SetBinning R 2
+    SetDoseFracParams R 0 0 0 0 0
+
+    Try
+       FixAstigmatismByCTF
+        FixComaByCTF
+        FixAstigmatismByCTF
+        FixAstigmatismByCTF
+    Catch
+        Echo ===> Fail to fit CTF. Skip coma-free alignment.
+        Echo ===> Check rotational center manually and set larger BT% at  "Set CTF Coma-free Param" in "Focus/Tune".
+    EndTry
+
+    RestoreCameraSet R
+    SetEucentricFocus
+
+    ReportBeamTilt btx_aligned bty_aligned
+    Echo ===> Beam-Tilt aligned to ( BTx: $btx_aligned, BTy: $bty_aligned )
+
+    # Normalize LowDoseMode
+    Echo ===> Normalizing LowDoseMode
+    Loop 1
+        GoToLowDoseArea V
+        Delay 0.5 sec
+        GoToLowDoseArea T
+        Delay 0.5 sec
+        GoToLowDoseArea F
+        Delay 0.5 sec
+        GoToLowDoseArea R
+        Delay 0.5 sec
+        GoToLowDoseArea V
+        Delay 0.5 sec
+    EndLoop
+
+    Echo ===> Finish Coma-free alignment
+
+    # Set OL aperture
+    Plugin JEOL SetAptExpSize $OLapt_type $setOLaptAtLast
+
+    GoToLowDoseArea R
+
+    If $skip_dialogs == 0
+       YesNoBox Finished. If you want to save this record deflector to $cmd_MagRecord 
+       If $RepVal1 == 1
+          Call SaveRecordMag
+       Endif 
+    Endif 
+
+save_recrodDef = 1 # save the current record deflector after finished 0:
+EndMacro
+Macro	26
+ScriptName CallAtlasMag
+# ==============================================================================
+# Summary:
+# Switch microscope to Atlas (Grid Map) condition using EMProperties parameters.
+#
+# Overview:
+# This script loads EMProperties, configures Low Dose and magnification states,
+# sets the condenser lens aperture, removes the slit, applies Atlas spot size
+# and illumination, and finally loads the Atlas lens/deflector data.
+# It is typically used to prepare the microscope for Grid Map (Atlas) acquisition.
+#
+# Date: 2025-12-24
+# Author: F.M. (JEOL Ltd.)
+# SPDX-License-Identifier: MIT
+# ==============================================================================
+
+# ============ Parameters ============
+#CLapt_type = 1 #For JEOL plugin, 1 means 1st CL aperture
+#CLapt_sizeID = 1 # CLapt for square. 0: Remove, 1: No.1, 2: No.2, 3:No.3, 4:No.4
+
+#====================================================
+# Setting for Atlas
+#====================================================
+CallFunction EMProperties::LoadAdditionalProperties
+CLapt_sizeID = $CLapt_for_atlas
+# =====================================
+
+SetLowDoseMode 1
+GoToLowDoseArea R
+SetEucentricFocus 
+delay 2
+
+SetLowDoseMode 0
+SetMag $SquareMag
+delay 2
+
+SetLowDoseMode 0
+SetMag $mag_atlas
+
+# Set CL aperture
+Plugin JEOL SetAptExpSize $CLapt_type $CLapt_sizeID
+delay 3
+
+# Remove slit
+SetSlitIn 0
+
+
+# Apply Atlas illumination conditions
+SetSpotSize $spot_atlas
+SetPercentC2 $brightness_atlas # 100%
+
+SetEucentricFocus 
+
+# Load Atlas lens/deflector settings
+CallFunction Funcs::LoadLensData $cmd_MagAtlas
+EndMacro
+Macro	27
+ScriptName CallSquareMag
+
+# ==============================================================================
+# Summary:
+# Switch microscope to Square imaging condition using EMProperties parameters.
+#
+# Overview:
+# This script loads EMProperties and switches the microscope from Atlas-related
+# conditions to Square imaging conditions. It normalizes Low Dose mode,
+# sets the Square magnification, configures condenser and objective apertures,
+# applies spot size and illumination for Square imaging, loads Square lens data,
+# and ensures the slit is removed.
+# It is typically used before Square mapping or Square-based data collection.
+#
+# Date: 2025-12-24
+# Author: F.M. (JEOL Ltd.)
+# SPDX-License-Identifier: MIT
+# Provided "AS IS", without warranty of any kind.
+# ==============================================================================
+
+#============ Parameters ============
+CallFunction EMProperties::LoadAdditionalProperties
+CLapt_sizeID = $CLapt_for_square
+#====================================================
+# Settingfor Square
+#====================================================
+
+SetLowDoseMode 0
+SetMag $mag_atlas
+delay 3
+
+SetLowDoseMode 1
+GoToLowDoseArea R
+SetEucentricFocus 
+delay 3
+
+SetLowDoseMode 0
+SetMag $SquareMag
+
+# Set CL aperture
+Plugin JEOL SetAptExpSize $CLapt_type $CLapt_sizeID
+delay 3 sec
+
+# Remove OL aperture
+Plugin JEOL SetAptExpSize $OLapt_type 0
+delay 3 sec
+
+# Apply Square illumination conditions
+SetSpotSize $spot_square
+SetPercentC2 $brightness_square 
+
+SetEucentricFocus 
+
+# Load Square lens/deflector settings
+CallFunction Funcs::LoadLensData $cmd_MagSquare
+
+# Remove slit
+SetSlitIn 0
+EndMacro
+Macro	28
+ScriptName CallRecordMag
+
+# ==============================================================================
+# Summary:
+# Switch microscope to Record (data acquisition) condition.
+#
+# Overview:
+# This script loads Record-related EMProperties, sets the condenser aperture,
+# switches to Low Dose Record mode, resets defocus, and loads Record lens/
+# deflector data. It is intended to prepare the microscope for final data
+# acquisition after alignment and setup steps.
+#
+# Date: 2025-12-24
+# Author: F.M. (JEOL Ltd.)
+# SPDX-License-Identifier: MIT
+# ==============================================================================
+
+#============ Parameters ============
+CallFunction EMProperties::LoadAdditionalProperties
+#====================================================
+
+#====================================================
+# Setting for Record
+#====================================================
+
+CLapt_sizeID = $CLapt_for_record
+# Set CL aperture
+Plugin JEOL SetAptExpSize $CLapt_type $CLapt_sizeID
+
+SetLowDoseMode 1
+GoToLowDoseArea R
+delay 1
+
+SetEucentricFocus 
+ResetDefocus 
+
+# Load Record lens/deflector settings
+CallFunction Funcs::LoadLensData $cmd_MagRecord 
+EndMacro
+Macro	29
+ScriptName CenterBeam
+
+Trial 
+ReportMeanCounts A
+mean_count = $repVal1
+
+ReportBeamShift init_beamX init_BeamY
+
+# If the image is bright, do beam centering
+If $mean_count > 3
+   
+   Echo ---> BeamCentering...
+   CenterBeamFromImage
+
+   T
+   ReportMeanCounts A
+   mean_count = $repVal1
+
+   If $mean_count < 3
+   SetBeamShift $init_beamX $init_BeamY
+   Try 
+      skip_message @= "Skipped. Beam was not detected in Trial"
+      SkipAcquiringNavItem 1
+      CallFunction Funcs::AnnotateSkipItem $skip_message
+      Exit 
+   Catch 
+      Echo ====== There are no navigator =========
+   EndTry 
+   EndIf
+   
+EndIf
+
+If $mean_count < 3
+   SetBeamShift $init_beamX $init_BeamY
+   Try 
+      skip_message @= "Skipped. Beam was not detected in Trial"
+      SkipAcquiringNavItem 1
+      CallFunction Funcs::AnnotateSkipItem $skip_message
+      Exit 
+   Catch 
+      Echo ====== There are no opend navigator =========
+   EndTry 
+EndIf
+EndMacro
+Macro	30
+ScriptName SPADataCollection_screen
+
+# ==============================================================================
+# Summary:
+#   Automated screening workflow for cryo-EM SPA data collection.
+#
+# Description:
+#   This script performs a standard screening workflow in Low Dose mode:
+#   it initializes the microscope settings, aligns the target hole,
+#   optionally saves View images, performs autofocus and drift waiting,
+#   realigns the hole, and finally runs multi-hole data collection.
+#   The workflow supports multiple hole-alignment methods and is intended
+#   for rapid screening prior to full SPA data acquisition.
+#
+# Date: 2025-12-24
+# Author: F.M. (JEOL Ltd.)
+# License: MIT License
+# ==============================================================================
+
+# =============== Parameters for screening=============== 
+save_V = 1
+save_R = 1
+workflowType = 2 #1 SPA data collecition, 2 Screening
+measure_thickness = 1 
+whichAlignHole = 2     # Which hole alignment do you use 0:FindOneHole, 1: Template (Buf T), 2: YoneoLocr
+onlyRecord = 1          # for the screening mode
+# ========================================= 
+
+SuppressReports
+SetLowDoseMode 1
+# ---------- Set Initial Setting --------------
+CallFunction SPADataCollection::Initializer_kai $workflowType
+#------------------------------------
+
+# Change CL aperture for large-area imaging
+Plugin JEOL SetAptExpSize $CLapt_type $CLapt_for_view
+
+# ---------- Align Hole --------------
+if $whichAlignHole == 0
+   Call AlignHoleByFindOneHole
+ElseIf $whichAlignHole == 1
+   Call AlignHoleByTemplate
+ElseIf $whichAlignHole == 2
+   Call AlignToHoleByYoneo
+Endif 
+
+
+# Save View image after alignment
+Copy A V
+
+If $save_V == 1
+   echo $log_dirV\View_afterAlign_Item$item_label_Square$map_label.jpg
+   SaveToOtherFile V JPG NONE $log_dirV\View_afterAlign_Item$item_label_Square$map_label.jpg
+EndIf
+#------------------------------------
+
+# Switch CL aperture for Record
+Plugin JEOL SetAptExpSize $CLapt_type $CLapt_for_record
+
+# ---------- AutoFocus --------------
+Call SetFocusAndTrialPosition
+Call AutoFocusScript
+#------------------------------------
+
+# ---------- Drift wat --------------
+Call DriftTask
+#------------------------------------
+
+# Restore CL aperture for View
+Plugin JEOL SetAptExpSize $CLapt_type $CLapt_for_view
+
+
+# ---------- ReAlign Hole --------------
+if $whichAlignHole == 0
+   Call AlignHoleByFindOneHole
+ElseIf $whichAlignHole == 1
+   Call AlignHoleByTemplate
+ElseIf $whichAlignHole == 2
+   Call AlignToHoleByYoneo
+Endif 
+#------------------------------------
+
+# Set CL aperture for final acquisition
+Plugin JEOL SetAptExpSize $CLapt_type $CLapt_for_record
+
+# ---------- Run Multi hole data  Collection --------------
+CallFunction SPADataCollection::Core $workflowType $save_R
+#------------------------------------
+EndMacro
+Macro	31
+ScriptName SPADataCollection
+# ----------------------------------------------------------------------
+# Date: 2025-12-24
+# Author: F.M. (JEOL Ltd.)
+# License: MIT License
+#
+# One-line summary:
+#   SPA workflow: initialize → read hole vectors → align to hole → autofocus/drift/beam centering → realign → acquire (MultipleRecords).
+#
+# Overview:
+#   This script orchestrates a typical SPA acquisition cycle under SerialEM Low Dose:
+#   - Initializes logging folders and snapshots of current SerialEM settings/scripts.
+#   - Reads/sets hole vectors for multi-shot acquisition (robust fallbacks included).
+#   - Performs a first hole alignment in View, optionally saves the View image.
+#   - Switches CL aperture for Record, runs focus positioning + autofocus, drift wait, and beam centering.
+#   - Switches back to View CL aperture, re-aligns to the hole to correct any residual movement.
+#   - Switches to Record CL aperture and runs the acquisition core (MultipleRecords / screening branch),
+#     optionally saving Record images/FFT and measuring ice thickness (slit in/out ratio) if enabled.
+# ----------------------------------------------------------------------
+
+# =============== Parameters =============== 
+save_V = 1
+save_R = 0
+workflowType = 1 # 1 SPA data collection, 2 Screening
+measure_thickness = 0
+use_apprV = 1 # use approach vector
+whichAlignHole = 2  # Which hole alignmet do you use 0:Find One Hole, 1: Template (Buf T), 2: YoneoLocr
+onlyRecord = 0 # for the screening mode
+high_speed = 0  # 0:not high speed data acquisition using normal K3 mode, 1: yes
+# ========================================= 
+
+SuppressReports
+SetLowDoseMode 1
+# ---------- Set Initial Setting --------------
+CallFunction SPADataCollection::Initializer_kai $workflowType
+#------------------------------------
+
+Try 
+   UseMapItemHoleVectors  0 #add for robust hole vector reading
+   flag = 0
+Catch 
+    Echo Failed to read map hole vector from Map-Item
+    flag = 1
+EndTry 
+
+if $flag == 1
+   Try 1
+      UseHoleVectorsForMulti -2
+   Catch 
+      Echo Failed to read map hole vector from Setting file and navigator
+      OKBox !!!!!!!!!!!! STOP !!!!!!!!!!!!! Please re-calculate Map-hole vector
+      Exit 
+   EndTry 
+Endif 
+
+Try 
+   AdjustMultiShotPattern 0
+Catch 
+   echo Not Adjusted for mult-shot
+EndTry 
+
+ReportMultishotVectors 0
+
+#Change CLA for view/large area 
+Plugin JEOL SetAptExpSize $CLapt_type $CLapt_for_view
+
+# ---------- Align Hole --------------
+if $whichAlignHole == 0
+   Call AlignHoleByFindOneHole
+ElseIf $whichAlignHole == 1
+   Call AlignHoleByTemplate
+ElseIf $whichAlignHole == 2
+   Call AlignToHoleByYoneo
+Endif 
+
+#For save viewing image
+Copy A V
+
+If $save_V == 1
+   echo $log_dirV\View_afterAlign_Item$item_label_Square$map_label.jpg
+   SaveToOtherFile V JPG NONE $log_dirV\View_afterAlign_Item$item_label_Square$map_label.jpg
+EndIf
+#------------------------------------
+
+#Change CLA for record
+Plugin JEOL SetAptExpSize $CLapt_type $CLapt_for_record
+
+# ---------- AutoFocus --------------
+Call SetFocusAndTrialPosition
+Call AutoFocusScript
+#------------------------------------
+
+# ---------- Drift wait --------------
+Call DriftTask
+#------------------------------------
+
+# ---------- Center beam --------------
+Call CenterBeam
+#------------------------------------
+
+#Change CLA for view/large area 
+Plugin JEOL SetAptExpSize $CLapt_type $CLapt_for_view
+
+# ---------- ReAlign Hole --------------
+if $whichAlignHole == 0
+   Call AlignHoleByFindOneHole
+ElseIf $whichAlignHole == 1
+   Call AlignHoleByTemplate
+ElseIf $whichAlignHole == 2
+   Call AlignToHoleByYoneo
+Endif 
+#------------------------------------
+
+#Change CLA for large area
+Plugin JEOL SetAptExpSize $CLapt_type $CLapt_for_record
+
+# ---------- Run Multi hole data  Collection --------------
+CallFunction SPADataCollection::Core $workflowType $save_R $onlyRecord
+#------------------------------------
+
+
+# =============== Data collection Core Scripts =============== 
+Function Core 2 0 workflowType save_R onlyRecord high_speed
+   Echo =============== Starting SPADataCollection Macro =============== 
+   If $workflowType == 1
+
+      If $high_speed == 1
+         SetK3CDSmode 0 # add for fast data set
+         SetLowDoseMode 0 # add for fast data set
+      Endif 
+      Delay 1 sec
+
+      MultipleRecords   
+      
+      If $high_speed == 1
+         SetK3CDSmode 1 # add for fast data set
+         SetLowDoseMode 1 # add for fast data set
+      Endif 
+
+   ElseIf $workflowType == 2
+      If $onlyRecord == 1
+        R
+      Else
+        MultipleRecords -9 -9 -9  -9 -9 -9  -9 -9 1  -9 -9 -9
+      EndIf
+   Endif 
+
+   If $save_R == 1
+      SaveToOtherFile A JPG NONE $log_dirR\Record_Item$item_label_Square$map_label.jpg
+      FFT A
+      copy AF F
+      SaveToOtherFile F JPG NONE $log_dirR\Record_Item$item_label_Square$map_label_FFT.jpg
+      
+      img_info_file @= $log_dirR\Record_Item$item_label_Square$map_label.jpg
+      ReduceImage A 2 #binning 4
+      SaveToOtherFile A JPG NONE $log_dirR\Record_Item$item_label_Square$map_label.jpg
+   EndIf
+      
+   # 1st shot for ice thickness
+   If $measure_thickness == 1
+      
+      GoToLowDoseArea R
+      ReportEnergyFilter
+      If $repVal3 == 0
+         Echo ===> Energy filter slit is out at Record mode.
+         Echo ===> Insert  energy filter slit anyway.
+         SetSlitIn 1
+         L
+      ElseIf $repVal3 == -1
+         Echo ===> Will not measure ice thickness.
+         measure_thickness = 0
+      EndIf
+      ElectronStats A
+      electron_count_slitIn = $repVal5
+      
+      SetSlitIn 0
+      UpdateLowDoseParams R
+      
+      L 
+      ElectronStats A
+      electron_count_slitOut = $repVal5
+      
+      #RestoreCameraSet R
+      RestoreLowDoseParams R
+      
+      thickness = $electron_count_slitIn / $electron_count_slitOut
+      thickness = ROUND $thickness 2
+      
+      If $thickness <= 0.7
+         message_thickness @= "Too thick"
+         ChangeItemColor $current_item 0 # red
+      ElseIf 0.7 < $thickness AND  $thickness <= 0.8
+         message_thickness @= "Thick"
+         ChangeItemColor $current_item 3 # yellow
+      ElseIf 0.8 < $thickness AND  $thickness <= 0.9
+         message_thickness @= "So so"
+         ChangeItemColor $current_item 1 # green
+      ElseIf 0.9 < $thickness AND  $thickness <= 0.95
+         message_thickness @= "Thin"
+         ChangeItemColor $current_item 2 # blue
+      Else
+         message_thickness @= "Super thin! (or Empty)"
+         ChangeItemColor $current_item 2 # blue
+      EndIf 
+      # Thickness nm
+      thickness_nm = 278 * log ( 1 / $thickness )
+      ChangeItemNote $current_item Thickness : $thickness, $message_thickness, $thickness_nm [nm]
+      
+      Echo ========================================================
+      Echo ===> Thickness : $thickness (MeanRatio of slit in/out)
+      Echo ===> $message_thickness
+      Echo ========================================================
+      
+   Endif 
+EndFunction 
+
+
+Function Initializer_kai 1 0 workflowType 
+   #====================================================
+   # Initial setting
+   #====================================================
+   # workflowType 0: Data collection, 1: Screening
+   # For Parameters
+   CallFunction EMProperties::LoadAdditionalProperties
+   
+   If $workflowType == 1
+      #IsVariableDefined Initializer
+      
+      log_dir = $NAVIGATOR_PATHLogImage_DataCollection
+      
+      #If $repVal1 == 0
+         #ReSet Glob alData
+         # Set log image saving folder
+         RunInShell mkdir $log_dir
+         log_dirV :@= $log_dir\View
+         log_dirT :@= $log_dir\Trial
+         log_dirF :@= $log_dir\Focus
+         log_dirR :@= $log_dir\Record
+         RunInShell mkdir $log_dirV
+         RunInShell mkdir $log_dirT
+         RunInShell mkdir $log_dirF
+         RunInShell mkdir $log_dirR
+         
+         #GoToLowDoseArea R
+         #acq_count := -1
+         # Set Initializer
+         #Initializer := 1
+      #EndIf      
+      
+      settingFileDir @= LastSettings_DataCollection
+      RunInShell mkdir $NAVIGATOR_PATH\$settingFileDir
+      
+      # For Parameters_Screening
+   ElseIf $workflowType == 2
+      IsVariableDefined Initializer_Screening
+      
+      log_dir = $NAVIGATOR_PATHLogImage_Screening
+      
+      #If $repVal1 == 0
+         RunInShell mkdir $log_dir
+         log_dirV :@= $log_dir\View
+         log_dirT :@= $log_dir\Trial
+         log_dirF :@= $log_dir\Focus
+         log_dirR :@= $log_dir\Record
+         RunInShell mkdir $log_dirV
+         RunInShell mkdir $log_dirT
+         RunInShell mkdir $log_dirF
+         RunInShell mkdir $log_dirR
+         
+         #GoToLowDoseArea R
+         # Set Initializer
+         #Initializer_Screening := 1
+      #Endif 
+      
+      settingFileDir @= LastSettings_Screening
+      RunInShell mkdir $NAVIGATOR_PATH\$settingFileDir
+      
+      # For something other...
+   Else
+      Echo ===> Please set correct workflowType value.
+   Endif 
+   
+   # Open Gun Valve
+   ReportColumnOrGunValve 
+   If $repVal1 == 0
+      SetColumnOrGunValve 1
+   Endif 
+
+   #====================================================
+   # Save SerialEMsettings.txt
+   #====================================================
+   
+   ReportSettingsFile SEMsetting SEMscript
+   RunInShell copy $SEMsetting $NAVIGATOR_PATH\$settingFileDir
+   RunInShell copy $SEMscript $NAVIGATOR_PATH\$settingFileDir
+   #ReportSystemPath SEMcalibration SEMproperties
+   #RunInShell copy $SEMcalibration $NAVIGATOR_PATH\$settingFileDir
+   #RunInShell copy $SEMproperties $NAVIGATOR_PATH\$settingFileDir
+   
+   #====================================================
+   # Current info
+   #====================================================
+   ReportNavItem
+   current_item := $repVal1
+   item_label = $navLabel
+
+   NavIndexItemDrawnOn $current_item
+   map_item = $repVal1
+   ReportOtherItem $map_item
+   map_label = $navLabel
+
+   ReportStageXYZ
+   curr_x = $repVal1
+   curr_y = $repVal2
+   curr_z = $repVal3
+
+   # StageProperty
+   echo stage position $current_item stage, $curr_x $curr_y
+   CallFunction Funcs::CustomMoveStageTo $curr_x $curr_y
+
+   
+Endfunction
+EndMacro
+Macro	32
+ScriptName SPADataCollection_HighSpeed
+
+# Date: 2025-12-24
+# Author: F.M. (JEOL Ltd.)
+# License: MIT License
+# ----------------------------------------------------------------------
+# One-line summary:
+#   High-speed SPA workflow: same as standard, but toggles K3 CDS/LowDose around MultipleRecords for speed.
+#
+# Overall description:
+#   This script runs an SPA data-collection sequence in LowDose mode.
+#   It initializes logging/paths, reads hole vectors robustly (Map-Item first, fallback to Navigator/Settings),
+#   performs hole alignment, autofocus + drift stabilization, optionally saves diagnostics images,
+#   then executes MultipleRecords (or Screening variant) using SPADataCollection::Core.
+# ----------------------------------------------------------------------
+
+
+# =============== Parameters =============== 
+save_V = 1
+save_R = 0
+workflowType = 1 #1 SPA data collection, 2 Screening
+measure_thickness = 0
+use_apprV = 1 #use approach vector
+whichAlignHole = 2  # Which hole alignment do you use 0:Find One Hole, 1: Template (Buf T), 2: YoneoLocr
+onlyRecord = 0  #for the screening mode
+high_speed = 1  # 0:not high speed data acquisition using normal K3 mode, 1: yes
+# ========================================= 
+
+SuppressReports
+SetLowDoseMode 1
+# ---------- Set Initial Setting --------------
+CallFunction SPADataCollection::Initializer_kai $workflowType
+#------------------------------------
+
+Try 
+   UseMapItemHoleVectors  0 #add for robust hole vector reading
+   flag = 0
+Catch 
+    Echo Failed to read map hole vector from Map-Item
+    flag = 1
+EndTry 
+
+if $flag == 1
+   Try 1
+      UseHoleVectorsForMulti -2
+   Catch 
+      Echo Failed to read map hole vector from Setting file and navigator
+      OKBox !!!!!!!!!!!! STOP !!!!!!!!!!!!! Please re-calculate Map-hole vector
+      Exit 
+   EndTry 
+Endif 
+
+Try 
+   AdjustMultiShotPattern 0
+Catch 
+   echo Not Adjusted for mult-shot
+EndTry 
+
+
+ReportMultishotVectors 0
+
+
+#Change CLA for large area
+Plugin JEOL SetAptExpSize $CLapt_type $CLapt_for_view
+
+# ---------- Align Hole --------------
+if $whichAlignHole == 0
+   Call AlignHoleByFindOneHole
+ElseIf $whichAlignHole == 1
+   Call AlignHoleByTemplate
+ElseIf $whichAlignHole == 2
+   Call AlignToHoleByYoneo
+Endif 
+
+#For save viewing image
+Copy A V
+
+If $save_V == 1
+   echo $log_dirV\View_afterAlign_Item$item_label_Square$map_label.jpg
+   SaveToOtherFile V JPG NONE $log_dirV\View_afterAlign_Item$item_label_Square$map_label.jpg
+EndIf
+#------------------------------------
+
+#Change CLA for large area
+Plugin JEOL SetAptExpSize $CLapt_type $CLapt_for_record
+
+# ---------- AutoFocus --------------
+Call SetFocusAndTrialPosition
+Call AutoFocusScript
+#------------------------------------
+
+# ---------- Drift wat --------------
+Call DriftTask
+#------------------------------------
+
+# ---------- Center beam --------------
+Call CenterBeam
+#------------------------------------
+
+#Change CLA for large area
+Plugin JEOL SetAptExpSize $CLapt_type $CLapt_for_view
+
+# ---------- ReAlign Hole --------------
+if $whichAlignHole == 0
+   Call AlignHoleByFindOneHole
+ElseIf $whichAlignHole == 1
+   Call AlignHoleByTemplate
+ElseIf $whichAlignHole == 2
+   Call AlignToHoleByYoneo
+Endif 
+#------------------------------------
+
+#Change CLA for large area
+Plugin JEOL SetAptExpSize $CLapt_type $CLapt_for_record
+
+# ---------- Run Multi hole data  Collection --------------
+CallFunction SPADataCollection::Core $workflowType $save_R $onlyRecord
+#------------------------------------
+EndMacro
+Macro	34
+ScriptName DriftTask
+
+# ---- Parameters for Drift -----
+driftRate = 5 # target drift rate
+unit @= nm
+max_wait = 300
+interval = 5
+
+# ---------- Drift wat --------------
+echo -------- Start Drift waiting --------
+DriftWaitTask $driftRate $unit $max_wait $interval -1 F
+
+echo -------- Finished Drift waiting --------
+#------------------------------------
+EndMacro
+Macro	35
+ScriptName Recalculating_FocusPosition_fromSqMap
+
+# ============= Parameters =============
+   CallFunction EMProperties::LoadAdditionalProperties
+# ===================================
+
+ReportNavFile 1
+NAVIGATOR_PATH = $RepVal3
+
+  Try 
+      FindHoles 
+      #UseHoleVectorsForMulti 0
+      ReportLastHoleVectors 0 v1x v1y v2x v2y
+
+      dist = SQRT ($v1x * $v1x + $v1y * $v1y) / 2 * 1.41
+      ang = ATAN2 ( $v1y $v1x ) + 45 + $adjust_ang
+      ang = MODULO ($ang 90)
+      ClearHoleFinder 
+      echo Set Focus position distance $dist, angle $ang
+
+      RunInShell echo $dist $ang > $NAVIGATOR_PATHFocus_position.txt
+      delay 1 sec
+      Call SetFocusAndTrialPosition
+   Catch 
+      echo Error in reading last hole vectors
+   EndTry 
+EndMacro
+Macro	36
+ScriptName ZLPAlignByFL
+
+#===================================================================
+# This script refine ZLP by FL.
+# LowDoseMode must be set up before running this script.
+# --------------------------------------------------------------------------------------------------------------------
+# Made and modified by TF and FM.
+#===================================================================
+
+    # ============================
+    # Parameters
+    # ============================
+
+    search_range = 40 # [step]. If set 40, range from -20 to +20.
+    search_step = 4 # [step]
+
+    ZLP_thld_ratio = 0.5
+    area = R #Preview # Area for ZLP alignment, R
+
+    # ============================
+    # Main
+    # ============================
+
+    CallFunction ZLPAlignByFL::Core $search_range $search_step $ZLP_thld_ratio $area
+
+###################################################
+
+    Function Core 3 1 search_range search_step ZLP_thld_ratio area
+
+        CallFunction EMProperties::LoadAdditionalProperties
+
+        If $hasOmegaFilter  == 0
+            Echo ===> This machine does not have Omega filter.
+            Echo ===> Do not run ZLPAlignment.
+            Return
+        EndIf
+
+        SuppressReports
+
+        # If slit is removed, Skip.
+        ReportEnergyFilter
+        If $repVal3 <= 0
+            Echo ===> Energy Filter Slit is removed. Or does not exist. 
+            Echo ===> Skip ZLP refine.
+            Return
+        Endif
+
+
+        # Set Record mode params for RefineZLP
+       Try 
+          SetExposure $area 0.5
+          SetDoseFracParams $area 0
+       Catch 
+          #SetExposure S 0.5
+       EndTry 
+
+        # Start RefineZLP
+        Echo # ======================================
+        Echo ===> Start RefineZLP
+        Echo Search range : $search_range [step]
+        Echo Refinement FL step : $search_step [step]
+
+        FL_min = NEARINT ( -1 * $search_range / 2 - $search_step )
+
+        ZLP_thld = 0
+        NewArray arr_count -1 $search_range 
+        NewArray arr_FL_shift -1 $search_range 
+
+        # Set FL to lower limit
+        Plugin JEOL GetFLf
+        curtFL  = $JEOLVal1
+        FL_min = $FL_min + $curtFL
+        Plugin JEOL SetDecFLf $FL_min
+
+        # Get array of electron count
+        Echo ===> Searching ZLP Center
+        ZLPmin = 0  
+        search_val = $search_step + $FL_min
+        Loop $search_range idx
+            search_val = $search_step + $search_val
+            Plugin JEOL SetDecFLf $search_val
+
+            $area
+            ElectronStats A
+            arr_count[$idx] = $repVal5
+            arr_FL_shift[$idx] = $FL_min + $search_step * $idx
+            Echo Search Index $idx : FL_shift = $arr_FL_shift[$idx], count = $arr_count[$idx]
+            If ($arr_count[$idx] > $ZLP_thld) AND ($arr_count[$idx] > 0.01)
+                ZLP_thld = $arr_count[$idx] * $ZLP_thld_ratio
+                ZLPmin = $ZLP_thld * 0.1
+                #echo min $ZLPmin
+            EndIf
+            
+            If $arr_count[$idx] < $ZLPmin
+                Echo ===> ZLP end.
+                Break
+            EndIf
+        EndLoop
+
+        # Get ZLP width (to create following array of ZLP positions)
+        ZLP_size = 0
+        Loop $#arr_count idx
+            If $arr_count[$idx] > $ZLP_thld
+                ZLP_size = $ZLP_size + 1
+            EndIf
+        EndLoop
+        #ReportEnergyFilter 
+        #ZLP_size = $RepVal1
+        Echo ===> ZLP size : $ZLP_size
+
+        # Get ZLP position
+        NewArray ZLP_positions -1 $ZLP_size
+        idx2 = 0
+        Loop $#arr_count idx1
+            If $arr_count[$idx1] > $ZLP_thld
+                idx2 = $idx2 + 1
+                ZLP_positions[$idx2] = $idx1
+                #Echo ZLP Index : $ZLP_positions[$idx2]
+            EndIf
+        EndLoop
+
+        # Find ZLP center
+        center_idx = NEARINT ( ($ZLP_size + 1) / 2 )
+        ZLP_center = $ZLP_positions[$center_idx]
+
+        isEvenSize = ( MODULO $ZLP_size 2 ) + 1            
+        If $isEvenSize == 1
+            If ($arr_count[$ZLP_center-1] > $arr_count[$ZLP_center])
+                ZLP_center = $ZLP_center - 1
+            EndIf
+        EndIf
+
+        Echo ZLP Center : Index = $ZLP_center, count = $arr_count[$ZLP_center]
+
+        # Set FL to ZLP center
+        Echo ===> Apply $arr_FL_shift[$ZLP_center] FL shift
+        FL_shift_fromEnd = ($ZLP_center - $ZLP_positions[$idx2] - 2) * $search_step
+
+        FL_shift_fromEnd = $FL_shift_fromEnd + $search_val
+        Echo $search_val search value
+        #ReportEnergyFilter 
+        #tempval = $RepVal1 / 2
+        #search_val = NEARINT $tempval 
+        #FL_shift_fromEnd = $FL_shift_fromEnd + $search_val
+        Plugin JEOL SetDecFLf $FL_shift_fromEnd
+
+        # Reset Record mode params
+       Try 
+          RestoreCameraSet $area
+       Catch 
+          #RestoreCameraSet S 0.2
+       EndTry 
+
+        Echo ===> Finish RefineZLP
+        Echo # ======================================
+
+    EndFunction
+
+###################################################
+EndMacro
+Macro	38
+ScriptName Funcs
+# ----------------------------------------------------------------------
+# Date: 2025-12-24
+# Author: T.F. and F.M. (JEOL Ltd.)
+# License: MIT License
+#===================================================================
+# functions which can be called from a macro or a function.
+# --------------------------------------------------------------------------------------------------------------------
+# Imported from Nexperion repository.
+#===================================================================
+
+#######################################################
+
+    Function WaitForRefilling 0 0
+
+        If $hasLN2Tank == 0
+            Return
+        EndIf
+
+        AreDewarsFilling  # report 1 for stage tank. report 2 for transfer tank.
+
+        If $repVal1 >= 1
+
+            LongOperation RS 0 RT 0
+
+            # Flashing at a time
+            If $flash_when_refill == 1
+                LongOperation FF 0
+                ReportTickTime
+                last_flashing := $repVal1
+                flashed := 1
+            EndIf
+
+            # Dark ref at a time
+            If ($darkRef_when_refill == 1) AND ($update_dark == 1)
+                LongOperation Da 0
+                ReportTickTime
+                last_dark := $repVal1
+                dark_updated := 1
+            EndIf
+
+            refilled := 1
+
+            Loop 60
+
+                Delay 30 sec
+                AreDewarsFilling 
+
+                If $repVal1 == 0
+                    Break
+                EndIf
+
+                #Echo Still refilling
+
+            EndLoop
+
+            Echo ===> Waiting for the additional settling time of $delay_after_refill [min]
+            Delay $delay_after_refill min
+            Echo ===> LN2 refill completed.
+
+        EndIf
+
+    EndFunction
+
+#######################################################
+
+    Function ElapsedTimeMonitor 2 1 start_ticks end_ticks process
+
+        ticks = $end_ticks - $start_ticks
+        IsVariableDefined current_item
+
+        If $repVal1 == 0
+           Echo ===> $process took $ticks
+        Else
+           Echo ===> $process for $current_item took $ticks
+        EndIf 
+
+    EndFunction
+
+#######################################################
+
+
+######################################################
+
+    Function CustomMoveStage 2 0 x y
+
+        apprV_X1    = -25 #[um]
+        apprV_Y1    = -25 #[um]
+        apprV_X2    = 5 #[um]
+        apprV_Y2    = 5 #[um]
+
+        If $use_apprV == 1
+            MoveStage ($x + $apprV_X1) ($y + $apprV_Y1)
+            MoveStage ($apprV_X2 - $apprV_X1) ($apprV_Y2 - $apprV_Y1)
+            MoveStage (-1 * $apprV_X2) (-1 * $apprV_Y2)
+        Else
+            MoveStage $x $y
+        EndIf
+
+    EndFunction
+
+#######################################################
+
+    Function CustomMoveStageTo 2 0 x y
+
+        apprV_X1    = -25 #[um]
+        apprV_Y1    = -25 #[um]
+        apprV_X2    = 5 #[um]
+        apprV_Y2    = 5 #[um]
+
+        If $use_apprV == 1
+            MoveStageTo ($x + $apprV_X1) ($y + $apprV_Y1)
+            MoveStageTo ($x + $apprV_X2) ($y + $apprV_Y2)
+        EndIf
+
+        MoveStageTo $x $y
+
+    EndFunction
+
+#######################################################
+
+    Function SetFlipXY 0 0
+
+       CallFunction EMProperties::LoadAdditionalProperties
+
+        flipX := -1
+        flipY := -1
+        If $hasOmegaFilter == 1
+            flipX := 1
+            flipY := -1
+        EndIf
+
+    EndFunction
+
+
+#######################################################
+
+
+Function AlignToHoleYoneo 2 1 maxholeshift max_align_iter 
+    
+    GoToLowDoseArea V
+
+   # Initial settings
+    maxholeshift_tmp = $maxholeshift
+
+    CallFunction Funcs::SetFlipXY
+
+    ReportImageShift IS_X0 IS_Y0
+    ReportSpecimenShift sp_x0 sp_y0
+    align_err_count = 0
+
+    LowLimitCount = 0.1 # 10 for k3
+    diff_x = 0
+    diff_y = 0
+
+    ResetImageShift
+
+    # ======== Start Hole Aliginment ========
+    Echo ===> Running AlignToHole ...
+
+    # Take a first View
+    V
+
+    # Hole align iterration
+    Loop $max_align_iter iter
+
+        ReportMeanCounts
+        MeanCountsF = $reportedValue1
+        if ( $MeanCountsF < $LowLimitCount )
+            echo Counts too low
+            Break 
+        EndIf
+
+        CallFunction DetectHoleAndMove $iter
+        diff_x = $repVal1
+        diff_y = $repVal2
+        holeshift = $repVal3
+        lastShiftX = $repVal4
+        lastShiftY = $repVal5
+
+        Echo Hole align iter $iter
+        Echo Shift ---> X:$dx [nm] Y:$dy [nm]
+        Echo -------------------
+
+        # Success
+        If $holeshift < $maxholeshift
+            Echo ===> Hole align finished.
+            Echo ===> $diff_x $diff_y
+
+                # Realign items
+                ShiftItemsByMicrons $diff_x $diff_y
+
+                diff_x = 0
+                diff_y = 0
+
+            #If $align_byIS == 0
+            SetImageShift 0 0 # IS is anyway 8000 8000 for stage shift
+            #EndIf
+
+            maxholeshift = $maxholeshift_tmp
+            #align_byIS = $align_byIS_tmp
+
+            Break
+        EndIf
+
+    EndLoop 
+
+EndFunction
+
+#######################################################
+
+Function DetectHoleAndMove 2 0 iterat
+
+        Echo ===> Hole detection by YoneoLocker.
+
+        If $iterat == 1
+            ImageProperties
+            xdim1 = $reportedValue1
+            ydim1 = $reportedValue2
+            binning1 = $reportedValue3
+            pixsize1 = $reportedValue5
+        Else
+            V
+        EndIf
+
+        SaveToOtherFile A JPG JPG $progdir\View_$iter.jpg
+        RunInShell echo View_$iter.jpg $binning1 > $progdir\WatchHole\$watchinfile
+        Delay 0.5s
+        DoesFileExist $progdir\View_$iterat.jpg
+
+        If $reportedValue1 == 0
+            echo Cannot make $progdir\View_$iterat.jpg
+            echo Try again
+            diff_x = 0
+            diff_y = 0
+            holeshift = 999999
+            lastShiftX = 0
+            lastShiftY = 0
+            return $diff_x $diff_y $holeshift $lastShiftX $lastShiftY 
+        EndIf
+
+        GxGyProb = {0., 0., 0.}
+
+        Loop 10
+            reportedValue1 = 0
+            OpenTextFile 1 T 0 $progdir\View_$iterat.log
+            Delay 0.1s
+            if $reportedValue1 == 1
+                ReadTextFile GxGyProb $progdir\View_$iterat.log
+                CloseTextFile 1
+                RemoveFile $progdir\View_$iterat.log
+                Break
+            Else
+                Echo Failed to read text file @log in YONEOLOCKER
+            EndIf
+
+            Delay 0.3s
+        EndLoop
+
+        RemoveFile $progdir\View_$iterat.jpg
+        prob = $GxGyProb[3]
+
+        if $prob == 0
+            Echo Can't detect any holes
+            Echo ===> Hole align failed....
+            Echo ===> Skip this item.
+            SetImageShift 0 0 0 1
+            skip_message @= "Skipped. align Hole failed"
+            CallFunction Funcs::AnnotateSkipItem $skip_message
+            SkipAcquiringNavItem 1
+            # Failed
+            Exit
+        EndIf
+
+        gdx = $GxGyProb[1] * $xdim1 * $binning1
+        gdy = $GxGyProb[2] * $ydim1 * $binning1
+        CameraToStageMatrix 0
+        dx = ($gdx * $repval1 + $gdy * $repval2) * $flipX * 1.4  # [nm] works well for CRYO ARM 300. 1.4 for CryoARM200
+        dy = ($gdx * $repval3 + $gdy * $repval4) * $flipY * 1.4  # [nm] -2 works well for CRYO ARM 300. 1.4 for CryoARM200
+
+        MoveStage $dx $dy
+
+        # For item realign
+        diff_x = $diff_x + $dx
+        diff_y = $diff_y + $dy
+
+        # Conver from [um] to [nm]
+        dx = $dx * 1000
+        dy = $dy * 1000
+        holeshift = sqrt ( $dx * $dx + $dy * $dy ) # [nm]
+
+    If $holeshift >= 500
+        align_err_count = $align_err_count + 1
+    EndIf
+
+    If $align_err_count >= 5
+        SetImageShift 0 0
+        skip_message @= "Skipped. Hole alignment failure. Too many big move."
+        CallFunction Funcs::AnnotateSkipItem $skip_message
+        Exit
+    EndIf
+
+    lastShiftX = $dx / 1000
+    lastShiftY = $dy / 1000
+
+    return $diff_x $diff_y $holeshift $lastShiftX $lastShiftY 
+
+EndFunction
+
+#######################################################
+
+    Function GetAppendedShift 2 0 sp_x0 sp_y0
+        
+        IsVariableDefined diff_x
+        If $repVal1 == 0
+            diff_x = 0
+            diff_y = 0
+        EndIf
+
+        ReportSpecimenShift sp_x1 sp_y1
+        diff_x = $diff_x + ( $sp_x1 - $sp_x0 ) * $flipX
+        diff_y = $diff_y + ( $sp_y1 - $sp_y0 ) * $flipY
+
+        Return $diff_x $diff_y
+
+    EndFunction
+############################################################
+
+Function AnnotateSkipItem 0 1 message_skipped
+
+    ReportNavItem 
+    nav_idx = $repVal1
+    label_skipped @= $navLabel-skipped
+    Echo ===> Item_$navLabel : $message_skipped
+    ChangeItemLabel $nav_idx $label_skipped
+    ChangeItemNote $nav_idx $message_skipped
+    ChangeItemColor $nav_idx 3
+    SkipAcquiringNavItem 1
+
+EndFunction
+
+#################################################
+
+
+    Function LoadLensData 0 1 file
+
+        Echo ===> Load lens data $file
+
+        Read2DTextFile defs $file
+        gunA1X = $defs[1][1]
+        gunA1Y = $defs[1][2]
+        gunA2X = $defs[2][1]
+        gunA2Y = $defs[2][2]
+        spotA1X = $defs[3][1]
+        spotA1Y = $defs[3][2]
+        CLA1X = $defs[4][1]
+        CLA1Y = $defs[4][2]
+        CLA2X = $defs[5][1]
+        CLA2Y = $defs[5][2]
+        FLA1X = $defs[6][1]
+        FLA1Y = $defs[6][2]
+        FLA2X = $defs[7][1]
+        FLA2Y = $defs[7][2]
+        CLsX = $defs[8][1]
+        CLsY = $defs[8][2]
+        OLsX = $defs[9][1]
+        OLsY = $defs[9][2]
+        IS1X = $defs[10][1]
+        IS1Y = $defs[10][2]
+        IS2X = $defs[11][1]
+        IS2Y = $defs[11][2]
+        PLAX = $defs[12][1]
+        PLAY = $defs[12][2]
+
+        #Plugin JEOL SetDecGunA1 $gunA1X $gunA1Y
+        #Plugin JEOL SetDecGunA2 $gunA2X $gunA2Y
+        #Plugin JEOL SetDecSpotA $spotA1X $spotA1Y 
+        Plugin JEOL SetDecCLA1 $CLA1X $CLA1Y
+        Plugin JEOL SetDecCLA2 $CLA2X $CLA2Y 
+        Plugin JEOL SetDecFLA1 $FLA1X $FLA1Y 
+        Plugin JEOL SetDecFLA2 $FLA2X $FLA2Y 
+        Plugin JEOL SetDecCLs $CLsX $CLsY 
+        Plugin JEOL SetDecOLs $OLsX $OLsY 
+        Plugin JEOL SetDecIS1 $IS1X $IS1Y 
+        Plugin JEOL SetDecIS2 $IS2X $IS2Y  
+        #Plugin JEOL SetDecPLA $PLAX $PLAY
+
+    EndFunction 
+
+#######################################################
+
+#######################################################
+
+    Function SaveLensData 0 1 file
+
+        Echo ===> Save lens data $file
+
+ 
+        Plugin JEOL GetGunA1 
+        gunA1X = $JEOLVal1
+        gunA1Y = $JEOLVal2
+        Plugin JEOL GetGunA2 
+        gunA2X = $JEOLVal1
+        gunA2Y = $JEOLVal2
+        Plugin JEOL GetSpotA 
+        spotA1X = $JEOLVal1
+        spotA1Y = $JEOLVal2
+        Plugin JEOL GetCLA1 
+        CLA1X = $JEOLVal1
+        CLA1Y = $JEOLVal2
+        Plugin JEOL GetCLA2 
+        CLA2X = $JEOLVal1
+        CLA2Y = $JEOLVal2
+        Plugin JEOL GetFLA1 
+        FLA1X = $JEOLVal1
+        FLA1Y = $JEOLVal2
+        Plugin JEOL GetFLA2
+        FLA2X = $JEOLVal1
+        FLA2Y = $JEOLVal2
+        Plugin JEOL GetCLs  
+        CLsX = $JEOLVal1
+        CLsY = $JEOLVal2
+        Plugin JEOL GetOLs 
+        OLsX = $JEOLVal1
+        OLsY = $JEOLVal2
+        Plugin JEOL GetIS1
+        IS1X = $JEOLVal1
+        IS1Y = $JEOLVal2 
+        Plugin JEOL GetIS2
+        IS2X = $JEOLVal1
+        IS2Y = $JEOLVal2 
+        Plugin JEOL GetPLA
+        PLAX = $JEOLVal1
+        PLAY = $JEOLVal2
+
+        DoesFileExist $file
+        If $RepVal1 == 0
+           OpenTextFile 1 W 0 $file
+           WriteLineToFile 1 $gunA1X $gunA1Y
+           WriteLineToFile 1 $gunA2X $gunA2Y
+           WriteLineToFile 1 $spotA1X $spotA1Y 
+           WriteLineToFile 1 $CLA1X $CLA1Y
+           WriteLineToFile 1 $CLA2X $CLA2Y 
+           WriteLineToFile 1 $FLA1X $FLA1Y 
+           WriteLineToFile 1 $FLA2X $FLA2Y 
+           WriteLineToFile 1 $CLsX $CLsY 
+           WriteLineToFile 1 $OLsX $OLsY 
+           WriteLineToFile 1 $IS1X $IS1Y 
+           WriteLineToFile 1 $IS2X $IS2Y  
+           WriteLineToFile 1 $PLAX $PLAY
+        Else 
+           OpenTextFile 1 O 0 $file
+           WriteLineToFile 1 $gunA1X $gunA1Y
+           WriteLineToFile 1 $gunA2X $gunA2Y
+           WriteLineToFile 1 $spotA1X $spotA1Y 
+           WriteLineToFile 1 $CLA1X $CLA1Y
+           WriteLineToFile 1 $CLA2X $CLA2Y 
+           WriteLineToFile 1 $FLA1X $FLA1Y 
+           WriteLineToFile 1 $FLA2X $FLA2Y 
+           WriteLineToFile 1 $CLsX $CLsY 
+           WriteLineToFile 1 $OLsX $OLsY 
+           WriteLineToFile 1 $IS1X $IS1Y 
+           WriteLineToFile 1 $IS2X $IS2Y  
+           WriteLineToFile 1 $PLAX $PLAY
+        Endif 
+
+        CloseTextFile 1
+
+    EndFunction 
+
+#######################################################
+EndMacro
+Macro	39
+ScriptName EMProperties
+# ----------------------------------------------------------------------
+# Date: 2025-12-24
+# Author: T.F. and F.M. (JEOL Ltd.)
+# License: MIT License
+#===================================================================
+# Additional settings for JEOL microscopes. It will be loaded in other scripts.
+# --------------------------------------------------------------------------------------------------------------------
+#===================================================================
+
+#######################################################
+
+    Function LoadAdditionalProperties
+
+        #====================================================
+        # JEOL TEM type
+        #====================================================
+        # Column
+        hasOmegaFilter = 1 # 0:No, 1:Yes
+        hasLN2Tank = 1 # 0:No, 1:Yes
+
+        # CL aperture
+        # 0: CryoARM200, CryoARM200CA, CryoARM300II, F200
+        # 1: 2nd CL aperture of first gen CryoARM300
+        CLapt_type = 0 #1, For JEOL plugin, 1 means 1st CL aperture
+        Arm300I = 1 # CryoARM300I, open apertures
+        CLapt_for_record = 2 #1 CLapt for record, 0: Remove, 1: No.1, 2: No.2, 3:No.3, 4:No.4
+        CLapt_for_view = 2 #1 CLapt for record, 0: Remove, 1: No.1, 2: No.2, 3:No.3, 4:No.4
+       
+        # OL aperture
+        OLapt_type = 2 # 2: OL aperure, 3: HC aperture
+
+        #====================================================
+        # Session path setting
+        #====================================================
+        ReportIfNavOpen 
+        if $RepVal1 == 0 
+           Echo ===> Navigator file is close
+        ElseIf $RepVal1 == 1 
+           Echo ===> Navigator file is opend, but not dfined.
+        Else 
+            ReportNavFile 1
+            NAVIGATOR_PATH = $repVal3
+         Endif 
+
+        #====================================================
+        # Stage setting
+        #====================================================
+        # Stage
+        backlash_x      = 0.05 #[um]
+        backlash_y      = 0.05 #[um]
+        backlash_z      = 1.2 #[um] #0.9
+        backlash_tilt   = 5 #[degree]
+
+        # Use approach vector?
+        use_apprV   = 0 # 0:No, 1:Yes
+        apprV_X1    = -25 #[um]
+        apprV_Y1    = -25 #[um]
+        apprV_X2    = 5 #[um]
+        apprV_Y2    = 5 #[um]
+
+        safty_z_lower = -210 #[um]
+        safty_z_upper = 205 #[um]
+
+        eucentric_height = 0 # [um] 
+        koehler_z_offset = 0 # [um] -120 for zerofringe
+
+        #====================================================
+        # Setting for Atlas
+        #====================================================
+        spot_atlas = 6
+        mag_atlas = 50
+        brightness_atlas = 100 # [%] for SetPercentC2
+        CLapt_for_atlas = 0
+
+        #====================================================
+        # Settingfor Square
+        #====================================================
+        # Default square mag
+        SquareMag = 200
+        CLapt_for_square = 0
+        
+        # For square mag illumination
+        spot_square = 3
+        brightness_square = 100 # [%] for SetPercentC2
+
+        #====================================================
+        # Alignment file Call setting
+        #====================================================
+
+        #Call Lens Alignment 
+        cmd_MagAtlas @= C:\ProgramData\SerialEM\afs\LowMag30.txt
+        cmd_MagSquare @= C:\ProgramData\SerialEM\afs\LowMag150.txt
+        cmd_MagRecord @= C:\ProgramData\SerialEM\afs\MagMode60k.txt
+
+        #====================================================
+        # Setting for FindInitVector
+        #====================================================
+        useK2K3 = 1 #0: No, 1: Yes, This is because sup-resolution pixel binning is defined as 0.5.
+
+        #====================================================
+        # Setting for Focus and Trial Position
+        #====================================================
+        adjust_ang = 24
+
+        #====================================================
+        # YoneoLocker
+        #====================================================
+        progdir = C:\Users\VALUEDGATANCUSTOMER\Desktop\yoneoLocr-main
+        watchinfile = InputImage.txt
+
+    EndFunction
+
+#######################################################
+EndMacro
+Macro	40
+
+      
+EndMacro
+Macro	41
+
+# 10 sec
+SetK3CDSmode 0
+ReportTickTime starttime
+#loop 10
+#   Record
+#EndLoop
+ReportK3CDSmode 
+
+Loop 300
+   Record
+EndLoop 
+ 
+ReportTickTime endtime
+
+taketime = $endtime - $starttime
+
+echo $taketime sec at 1 sec exposure
+ReportK3CDSmode 
+
+SetK3CDSmode 1
+EndMacro
+Macro	42
+ScriptName test
+
+Try 
+   UseMapItemHoleVectors  0 #add for robust hole vector reading
+   flag = 0
+Catch 
+    Echo Failed to read map hole vector from Map-Item
+    flag = 1
+EndTry 
+
+if $flag == 1
+   Try 1
+      UseHoleVectorsForMulti -2
+   Catch 
+      Echo Failed to read map hole vector from Setting file and navigator
+      OKBox !!!!!!!!!!!! STOP !!!!!!!!!!!!! Please re-calculate Map-hole vector
+      Exit 
+   EndTry 
+Endif 
+
+Try 
+   AdjustMultiShotPattern 0
+Catch 
+   echo Not Adjusted for mult-shot
+EndTry 
+
+ReportMultishotVectors 0
+EndMacro
+Macro	44
+ScriptName SaveAtlasMag
+
+CallFunction EMProperties::LoadAdditionalProperties
+CallFunction Funcs::SaveLensData $cmd_MagAtlas
+EndMacro
+Macro	45
+ScriptName SaveSquareMag
+
+CallFunction EMProperties::LoadAdditionalProperties
+CallFunction Funcs::SaveLensData $cmd_MagSquare
+EndMacro
+Macro	46
+ScriptName SaveRecordMag
+
+GoToLowDoseArea R
+
+CallFunction EMProperties::LoadAdditionalProperties
+CallFunction Funcs::SaveLensData $cmd_MagRecord
+EndMacro
+Macro	47
+ScriptName Check_ActiveBTComp
+
+# ----------------------------------------------------------------------
+# Date: 2025-12-24
+# Author: F.M. (JEOL Ltd.)
+# License: MIT License
+# ----------------------------------------------------------------------
+# Check "Coma vs ImageShift" calibration.
+# Verify that Beam Tilt change after ImageShift is within 0.1 mrad.
+# LowDoseMode must be set up before running this script.
+# ----------------------------------------------------------------------
+
+# ===== Parameters =====
+IS_distance = 15    #[um]
+exp_time = 1
+BTtoIS = 1
+ISDelay = 0         #[s]
+BT_threshold = 0.1  #[mrad]
+# ======================
+
+SuppressReports
+SetExposure R $exp_time
+SetBinning R 2
+SetDoseFracParams R 0 0 0 0 0
+
+# =========================================================
+# Reference: IS = 0
+# =========================================================
+Echo ===> Reference measurement (IS = 0)
+SetImageShift 0 0
+FixComaByCTF 1 1
+
+ReportBeamTilt
+BT0x = $RepVal1
+BT0y = $RepVal2
+
+Echo Reference BeamTilt: X=$BT0x Y=$BT0y [mrad]
+
+# =========================================================
+# Apply IS in X
+# =========================================================
+Echo ===> Applying IS_X = $IS_distance um
+ImageShiftByMicrons $IS_distance 0 $ISDelay $BTtoIS
+FixComaByCTF 1 1
+
+ReportBeamTilt
+BTx_X = $RepVal1
+BTy_X = $RepVal2
+
+dBTx = $BTx_X - $BT0x
+dBTy = $BTy_X - $BT0y
+dBT_X = SQRT ( $dBTx * $dBTx + $dBTy * $dBTy )
+
+Echo ΔBT (IS_X): $dBT_X [mrad]
+
+If $dBT_X > $BT_threshold
+   Echo WARNING: BeamTilt change exceeds $BT_threshold mrad for IS_X
+EndIf
+
+SetImageShift 0 0 $ISDelay $BTtoIS
+
+# =========================================================
+# Apply IS in Y
+# =========================================================
+Echo ===> Applying IS_Y = $IS_distance um
+ImageShiftByMicrons 0 $IS_distance $ISDelay $BTtoIS
+FixComaByCTF 1 1
+
+ReportBeamTilt
+BTx_Y = $RepVal1
+BTy_Y = $RepVal2
+
+dBTx = $BTx_Y - $BT0x
+dBTy = $BTy_Y - $BT0y
+dBT_Y = SQRT ( $dBTx * $dBTx + $dBTy * $dBTy )
+
+Echo ΔBT (IS_Y): $dBT_Y [mrad]
+
+If $dBT_Y > $BT_threshold
+   Echo WARNING: BeamTilt change exceeds $BT_threshold mrad for IS_Y
+EndIf
+
+SetImageShift 0 0 $ISDelay $BTtoIS
+
+# =========================================================
+RestoreCameraSet R
+
+Echo ===> Check_ActiveBTComp finished.
+EndMacro
+Macro	48
+
+EndMacro
+Macro	49
+ScriptName Check_BeamVSImage_onScreen
+# ----------------------------------------------------------------------
+# Summary (1 line):
+# Calibrates "beam shift vs image shift" by manually re-centering the beam on the screen after two known image-shift moves.
+#
+# What this script does (short overall description):
+# 1) Starts from ImageShift (0,0) and records the current ImageShift/BeamShift as the reference.
+# 2) Applies an ImageShift in X, asks you to re-center the beam on-screen using the beam-shift knob, then records the new BeamShift.
+# 3) Resets back to the reference, then repeats for an ImageShift in Y.
+# 4) Computes a 2×2 calibration matrix (a,b,c,d) mapping ImageShift -> BeamShift and prints a BeamShiftCalibration line to paste into SerialEMcalibrations.txt.
+#
+# Date: 2025-12-25
+# Author: F.M. (JEOL Ltd.)
+# License: MIT License
+# ----------------------------------------------------------------------
+
+#===================================================================
+# This script is for calibration beam shift vs image shift.
+# --------------------------------------------------------------------------------------------------------------------
+# <How to run>
+# At first, screen down and check beam centering on screen
+# If you want to calibrate beam vs image manually, enter four values getting from this script in calibration file (C:\\ProgramData\SrialEM\SerialEMcalibrations.txt)
+# --------------------------------------------------------------------------------------------------------------------
+# Made for CryoARM300 by F.M.
+#===================================================================
+
+shiftBeam = -12 #[um]
+waittime  = 1
+
+
+ScreenDown
+#GoToLowDoseArea R
+SetImageShift 0 0
+
+echo Report Beam shift and Image shift on Image shift (0,0)
+ReportImageShift
+i0_shiftx = $RepVal1
+i0_shifty = $RepVal2
+
+ReportBeamShift
+b0_shiftx = $RepVal1
+b0_shifty = $RepVal2
+
+ImageShiftByMicrons 0 0 # 1 1
+
+echo Beam centering by beam shift knob (Beam Align 1) on screen within $waittime [sec]
+count = $waittime
+loop $waittime
+   echo remaining time $count [sec]
+   delay 1
+   count = $count - 1
+EndLoop
+#T
+
+# ========= 1st ============
+echo 1st Image shift ($shiftBeam,0) ...
+ImageShiftByMicrons $shiftBeam 0 1 0
+#T
+
+ReportImageShift
+i1_shiftx = $RepVal1
+i1_shifty = $RepVal2
+
+echo
+echo Beam centering by beam shift knob (Beam Align 1) on screen within $waittime [sec]
+count = $waittime
+loop $waittime
+   echo remaining time $count [sec]
+   delay 1
+   count = $count - 1
+EndLoop
+
+
+ReportBeamShift
+b1_shiftx = $RepVal1
+b1_shifty = $RepVal2
+
+xb1 = $b1_shiftx - $b0_shiftx
+yb1 = $b1_shifty - $b0_shifty
+xi1 = $i1_shiftx
+yi1 = $i1_shifty
+
+#reset beam
+SetImageShift 0 0
+SetBeamShift $b0_shiftx $b0_shifty
+delay 1
+# =========================
+
+# ========= 2nd ============
+echo 2nd Image shift (0, $shiftBeam) ...
+ImageShiftByMicrons 0 $shiftBeam 1 0
+#T
+
+ReportImageShift
+i2_shiftx = $RepVal1
+i2_shifty = $RepVal2
+
+echo
+echo Beam centering by beam shift knob (Beam Align 1) on screen within $waittime [sec]
+count = $waittime
+loop $waittime
+   echo remaining time $count [sec]
+   delay 1
+   count = $count - 1
+EndLoop
+
+ReportBeamShift
+b2_shiftx = $RepVal1
+b2_shifty = $RepVal2
+
+xb2 = $b2_shiftx - $b0_shiftx
+yb2 = $b2_shifty - $b0_shifty
+xi2 = $i2_shiftx
+yi2 = $i2_shifty
+
+#Reset beam
+SetImageShift 0 0
+SetBeamShift $b0_shiftx $b0_shifty
+delay 1
+# =========================
+a = ( $xb1 * $yi2 -  $xb2 * $yi1 ) / ( $xi1 * $yi2 - $xi2 * $yi1 )
+b = ( $xb1 * $xi2 -  $xb2 * $xi1 ) / ( $xi2 * $yi1 - $xi1 * $yi2 )
+c = ( $yb1 * $yi2 -  $yb2 * $yi1 ) / ( $xi1 * $yi2 - $xi2 * $yi1 )
+d = ( $yb1 * $xi2 -  $yb2 * $xi1 ) / ( $xi2 * $yi1 - $xi1 * $yi2 )
+
+ReportMagIndex
+magIn = $RepVal1
+ReportMag
+mag = $RepVal1
+ReportAlpha
+alpha = $RepVal1 - 1
+
+echo Result of calibration is as follows... Rewrite it on "BeamShiftCalibration" line in C:\\ProgramData\SrialEM\SerialEMcalibrations.txt
+#echo $a $b $c $d
+echo BeamShiftCalibration $magIn $a $b $c $d $alpha 1  $mag
+EndMacro
+Macro	54
+
+EndMacro
+Macro	55
+ScriptName FunctionOfAdjustFOV_byDrag-nonPython
+# ----------------------------------------------------------------------
+# Summary (1 line):
+#   Calibrate and apply JEOL FLA1 deflector so the image can be re-centered by “dragging” the view (non-Python + Python helper).
+#
+# Overview:
+#   This package consists of:
+#     1) A non-Python SerialEM function set that reads JEOL IS1/FLA1 values and performs a 2-point calibration
+#        (FLA change -> observed IS change) to compute an IS->FLA transform matrix.
+#     2) A Python script that shows View images, waits for the user to drag the image (Image Shift),
+#        then converts the IS delta into the required FLA1 correction and applies it via JEOL plugins.
+#   Intended use:
+#     - Run at Square/Atlas magnifications to refine FOV alignment interactively and save lens states as needed.
+#
+# Date: 2025-12-25
+# Author: F.M. (JEOL Ltd.)
+# License: MIT License
+# ----------------------------------------------------------------------
+
+#Function for Adjust FOV by Drag non-python functions
+
+# function for GetIS 
+Function GetIS
+   Plugin JEOL GetIS1
+   oorgIS1x = $JEOLVal1
+   oorgIS1y = $JEOLVal2
+   Return $oorgIS1x $oorgIS1y 
+EndFunction 
+
+#function for GetFLA
+Function GetFLA
+   Plugin JEOL GetFLA1
+   curFLA1x = $JEOLVal1
+   curFLA1y = $JEOLVal2
+   Return $curFLA1x $curFLA1y
+EndFunction 
+
+
+#function for FLA calibration
+Function FLAcalibration
+   
+   # parameters
+   
+   deltaFLA1x = 600  #dec
+   deltaFLA1y = 100  #dec
+   
+   
+   deltaFLA1x2 = -200  #dec
+   deltaFLA1y2 = -500  #dec
+   
+   # ----------go ---------------
+   
+   echo  ----------go ---------------
+   
+   
+   #Call CallSquareMag
+   SetColumnOrGunValve 1
+   
+   SetImageShift 0 0
+   
+   View
+   Copy A F
+   
+   #get FLA1
+   Plugin JEOL GetFLA1
+   
+   curFLA1x = $JEOLVal1
+   curFLA1y = $JEOLVal2
+   
+   
+   # ========== 1st ============
+   FLA1x = $curFLA1x + $deltaFLA1x 
+   FLA1y = $curFLA1y + $deltaFLA1y 
+   
+   echo  1st ------- Plus $deltaFLA1x  $deltaFLA1y 
+   
+   # move image by FLA1
+   Plugin JEOL SetDecFLA1 $FLA1x $FLA1y
+   
+   Plugin JEOL GetIS1
+   
+   orgIS1x = $JEOLVal1
+   orgIS1y = $JEOLVal2
+   
+   View
+   AlignTo F 
+   Plugin JEOL GetIS1
+   curIS1x = $JEOLVal1
+   curIS1y = $JEOLVal2
+   delay 1 sec
+   
+   # reset image shift
+   ClearAlignment 1
+   SetImageShift 0 0
+   
+   deltaIS1x = $curIS1x - $orgIS1x
+   deltaIS1y = $curIS1y - $orgIS1y
+   echo deltaISx  ISy FLA1x FLA1y  $deltaIS1x $deltaIS1y $deltaFLA1x   $deltaFLA1y 
+   
+   # reset FLA1
+   Plugin JEOL SetDecFLA1 $curFLA1x  $curFLA1y
+   
+   delay 3 sec
+   
+   # ========== 2nd ============
+   FLA1x = $curFLA1x + $deltaFLA1x2 
+   FLA1y = $curFLA1y + $deltaFLA1y2 
+   
+   echo 2nd ------- Plus $deltaFLA1x2  $deltaFLA1y2 
+   
+   # move image by FLA1
+   Plugin JEOL SetDecFLA1 $FLA1x $FLA1y
+   
+   Plugin JEOL GetIS1
+   
+   orgIS1x = $JEOLVal1
+   orgIS1y = $JEOLVal2
+   
+   View
+   AlignTo F 
+   Plugin JEOL GetIS1
+   curIS1x = $JEOLVal1
+   curIS1y = $JEOLVal2
+   delay 1 sec
+   
+   # reset image shift
+   ClearAlignment 1
+   SetImageShift 0 0
+   
+   deltaIS1x2 = $curIS1x - $orgIS1x
+   deltaIS1y2 = $curIS1y - $orgIS1y
+   echo deltaISx  ISy FLA1x FLA1y  $deltaIS1x2 $deltaIS1y2 -$deltaFLA1x  -$deltaFLA1y
+   
+   fx1 = $deltaFLA1x
+   fy1 = $deltaFLA1y
+   fx2 = $deltaFLA1x2
+   fy2 = $deltaFLA1y2
+   ix1 = $deltaIS1x
+   iy1 = $deltaIS1y
+   ix2 = $deltaIS1x2
+   iy2 = $deltaIS1y2
+   
+   
+   # reset FLA1
+   Plugin JEOL SetDecFLA1 $curFLA1x  $curFLA1y
+   
+   #((a,b)
+   #(c,d))
+   
+   a = ( $fx1 * $iy2 - $fx2 * $iy1 ) / ( $ix1 * $iy2 - $ix2 * $iy1 )
+   b = ( $fx2 * $ix1 - $fx1 * $ix2 ) / ( $ix1 * $iy2 - $ix2 * $iy1 )
+   c = ( $fy1 * $iy2 - $fy2 * $iy1 ) / ( $ix1 * $iy2 - $ix2 * $iy1 )
+   d = ( $fy2 * $ix1 - $fy1 * $ix2 ) / ( $ix1 * $iy2 - $ix2 * $iy1 )
+   
+   echo ((a,b),(c,d)) = $a $b $c $d
+   
+   
+   Return $a $b $c $d
+
+EndFunction 
+EndMacro
+Macro	56
+#!Python
+#ScriptName AdjustFOV_byDrag-FLA
+    
+    # -*- coding: utf-8 -*-
+"""
+SerialEM workflow + non-blocking buffer-A viewer (tkinter + Pillow)
+
+"""
+
+import time
+import threading
+import queue
+from datetime import datetime
+
+import numpy as np
+from PIL import Image, ImageTk
+
+try:
+    import serialem as sem
+except Exception as e:
+    raise RuntimeError("serialem module not available") from e
+
+# =========  =========
+SquareMag   = "CallSquareMag"
+AtlasMag    = "CallAtlasMag"
+
+SaveSquareMag   = "SaveSquareMag"
+SaveAtlasMag    = "SaveAtlasMag"
+
+skip_dialog = 0        # 0: no skip 1: skip
+skip_popupwind = 1        # 0: no skip 1: skip
+sigma_k     = 2.0      # dynamic range = mean +/- k*sigma
+
+do_calib = 1 #1: do calibration for FLA to Image Shift , 0: do not calibrate and used following values
+
+# IS to FLA matrix ((ka,kb)(kc,kd)) for Square
+Sa = 0.182609 
+Sb = -0.572377
+Sc = -0.755827 
+Sd =  -0.209177
+
+# IS to FLA matrix ((ka,kb)(kc,kd)) for Atlas
+Aa = 0.041815
+Ab = -0.202359 
+Ac = -0.250779
+Ad =  -0.049929
+
+# =========  =========
+import tkinter as tk
+
+class _TkViewerThread(threading.Thread):
+    def __init__(self):
+        super().__init__(daemon=True)
+        self.q = queue.Queue()
+        self._ready = threading.Event()
+
+    def run(self):
+        self.root = tk.Tk()
+        self.root.withdraw()  #
+        self._ready.set()
+        def poll():
+            try:
+                while True:
+                    func, args, kwargs = self.q.get_nowait()
+                    try:
+                        func(*args, **kwargs)
+                    except Exception as e:
+                        print("Viewer error:", e)
+            except queue.Empty:
+                pass
+            self.root.after(30, poll)
+        self.root.after(30, poll)
+        self.root.mainloop()
+
+    def call(self, func, *args, **kwargs):
+        self._ready.wait()
+        self.q.put((func, args, kwargs))
+
+_viewer = _TkViewerThread()
+_viewer.start()
+
+def _open_image_window(im: Image.Image, title: str, info_text: str):
+    """Tk thread"""
+    win = tk.Toplevel(_viewer.root)
+    win.title(title)
+    if info_text:
+        tk.Label(win, text=info_text, justify="left", anchor="w").pack(padx=6, pady=(6,0), fill="x")
+    tk_img = ImageTk.PhotoImage(im)
+    lbl = tk.Label(win, image=tk_img)
+    lbl.image = tk_img  #
+    lbl.pack(padx=6, pady=6)
+
+    # Esc / q /
+    win.bind("<Escape>", lambda e: win.destroy())
+    win.bind("<Key-q>", lambda e: win.destroy())
+    lbl.bind("<Button-1>", lambda e: win.destroy())
+
+def show_pil_image_nonblocking(im: Image.Image, title="Preview", info_text=""):
+    _viewer.call(_open_image_window, im, title, info_text)
+
+# ========= SerialEM =========
+def _timestamp():
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+def change_mag(mag_index):
+    sem.Call(mag_index)
+    time.sleep(3)
+
+def view_acquire():
+    sem.SetBinning("V",2)
+    sem.View()
+    time.sleep(0.2)
+
+def report_IS():
+    x,y,*_ = sem.ReportImageShift()
+    return float(x), float(y)
+
+def wait_for_user_drag_and_ok(title_text,ka,kb,kc,kd):
+    sem.SetImageShift(0,0)
+    #sem.PluginString('JEOL', 'GetIS1',"")
+    #oorgIS1x = sem.GetVariable("JEOLVal1")
+    #sem.PluginString('JEOL', 'GetIS1',"")
+    #oorgIS1y = sem.GetVariable("JEOLVal2")
+
+    oorgIS1x,oorgIS1y,*_=sem.CallFunction("FunctionOfAdjustFOV_byDrag-nonPython::GetIS")
+
+    if skip_dialog == 0:
+        sem.OKBox(
+            f"{title_text}"+'\n'+'\n'+
+            "1) In the Image window, drag the image to change Image Shift."+'\n'+
+            "2) When done, press 'B' key to continue."
+        )
+    while not sem.KeyBreak():
+        sem.Delay(0.1,"s")
+
+    time.sleep(0.5)
+    #get IS1
+    #sem.PluginString('JEOL', 'GetIS1',"")
+    #curIS1x = sem.GetVariable("JEOLVal1")
+    #sem.PluginString('JEOL', 'GetIS1',"")
+    #curIS1y = sem.GetVariable("JEOLVal2")
+    curIS1x,curIS1y,*_=sem.CallFunction("FunctionOfAdjustFOV_byDrag-nonPython::GetIS")
+
+    #get FLA1
+    #sem.PluginString('JEOL', 'GetFLA1',"")
+    #curFLA1x = sem.GetVariable("JEOLVal1")
+    #sem.PluginString('JEOL', 'GetFLA1',"")
+    #curFLA1y = sem.GetVariable("JEOLVal2")
+    curFLA1x,curFLA1y,*_=sem.CallFunction("FunctionOfAdjustFOV_byDrag-nonPython::GetFLA")
+
+    deltaIS1x = float(curIS1x) - float(oorgIS1x)
+    deltaIS1y = float(curIS1y) - float(oorgIS1y)
+
+    # reset image shift
+    sem.ClearAlignment(1)
+    sem.SetImageShift(0,0)
+    #Calculate IS to FLA1x, y 
+    delFLA1x = ka * float(deltaIS1x) + kb * float(deltaIS1y)
+    delFLA1y = kc * float(deltaIS1x) + kd * float(deltaIS1y)
+
+    FLA1x = float(curFLA1x) - delFLA1x 
+    FLA1y = float(curFLA1y) - delFLA1y
+    sem.PluginAllDoubles('JEOL', 'SetDecFLA1', FLA1x, FLA1y)
+
+    return 0
+
+# ========= buffer A =========
+def _bufferA_to_uint8_sigma(arr, k=3.0):
+    if arr.ndim != 2:
+        arr = arr[..., 0]
+    arrf = np.asarray(arr, dtype=np.float64)
+    finite = np.isfinite(arrf)
+    if not finite.any():
+        return np.zeros(arr.shape, dtype=np.uint8), 0.0, 0.0, 0.0, 0.0
+    vals = arrf[finite]
+    mean_val = float(np.mean(vals))
+    std_val  = float(np.std(vals, ddof=0))
+    vmin = mean_val - k * std_val
+    vmax = mean_val + k * std_val
+    if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin >= vmax:
+        vmin = float(np.min(vals))
+        vmax = float(np.max(vals))
+        if vmin == vmax:
+            return np.zeros(arr.shape, dtype=np.uint8), mean_val, std_val, vmin, vmax
+    arrc = np.clip(arrf, vmin, vmax)
+    arr8 = ((arrc - vmin) * (255.0 / (vmax - vmin))).astype(np.uint8)
+    return arr8, mean_val, std_val, vmin, vmax
+
+def show_buffer_A_sigma_nb(k=3.0, title="Buffer A (mean +/- k*sigma)"):
+    bim = sem.bufferImage("A")
+    arr = np.asarray(bim)
+    arr8, mean_val, std_val, vmin, vmax = _bufferA_to_uint8_sigma(arr, k=k)
+    im = Image.fromarray(arr8)
+    info = f"mean={mean_val:.3f}  sigma={std_val:.3f}  k={k}  vmin={vmin:.3f}  vmax={vmax:.3f}"
+    show_pil_image_nonblocking(im, title=title, info_text=info) 
+
+# =========  =========
+def main():
+    # Low Dose -> View
+    sem.SetLowDoseMode(1)
+    sem.GoToLowDoseArea('V')
+    time.sleep(1)
+
+    # 1) View 
+    view_acquire()
+    if skip_popupwind == 0:
+        show_buffer_A_sigma_nb(k=sigma_k, title="View @ start (mean +/- k*sigma)")
+    else:
+        sem.AddBufToStackWindow("A",0,0)
+
+    # 2) SquareMag View
+    change_mag(SquareMag)
+
+    if do_calib == 1:
+        Sa,Sb,Sc,Sd = sem.CallFunction("FunctionOfAdjustFOV_byDrag-nonPython::FLAcalibration")
+        Sa = float(Sa)
+        Sb = float(Sb)
+        Sc = float(Sc)
+        Sd = float(Sd)
+    view_acquire()
+
+    sem.SetBeamBlank(1)
+
+    # 3) 
+    wait_for_user_drag_and_ok("Drag on first SquareMag view",Sa,Sb,Sc,Sd)
+    sem.Call(SaveSquareMag)
+    view_acquire()
+
+    if skip_popupwind == 0:
+        show_buffer_A_sigma_nb(k=sigma_k, title="SquareMag #1")
+    else:
+        sem.AddBufToStackWindow("A",0,1)
+
+    # 4)
+    change_mag(AtlasMag)
+
+    if do_calib == 1:
+        Aa,Ab,Ac,Ad = sem.CallFunction("FunctionOfAdjustFOV_byDrag-nonPython::FLAcalibration")
+        Aa = float(Aa)
+        Ab = float(Ab)
+        Ac = float(Ac)
+        Ad = float(Ad)
+    view_acquire()
+
+    sem.SetBeamBlank(1)
+
+    # 5)
+    wait_for_user_drag_and_ok("Drag on second SquareMag view",Aa,Ab,Ac,Ad)
+    sem.Call(SaveAtlasMag)
+    view_acquire()
+
+    if skip_popupwind == 0:
+        show_buffer_A_sigma_nb(k=sigma_k, title="AtlasMag #2")
+    else:
+        sem.AddBufToStackWindow("A",0,2)
+
+    sem.Echo("Done.")
+
+if __name__ == "__main__":
+    main()
+EndMacro
+Macro	58
+GoToLowDoseArea R
+ReportMagIndex 
+a = -4.757149 * 1.34
+b = -4.115907 * 1.34
+c = 5.12928  * 1.34
+d = - 4.799561  * 1.34
+
+SetRegularHoleVectors $a $b $c $d 41 
+ReportLastHoleVectors 0
+ReportLastHoleVectors 41
+ReportMultishotVectors 
+
+#MultipleRecords 
+UseMapItemHoleVectors 0
+echo afdter
+ReportLastHoleVectors 0
+ReportLastHoleVectors 41
+ReportMultishotVectors 
+EndMacro
+Macro	59
+#!Python
+#ScriptName SaveSettingAndScript_byGUI
+
+# -*- coding: utf-8 -*-
+
+"""
+SerialEM Settings & Script bundler (tkinter, full version with cmd_Mag* rewrite)
+- Auto-load: calls EMProperties::LoadAdditionalProperties on startup and fills fields
+- Shows/edits Atlas, Square, LowDose(Record/View/Focus/Trial/Search)
+- Loads settings back to the UI
+- Reads current state from SerialEM (unavailable -> N/A)
+- "Save As":
+    * Choose destination folder (askdirectory), then choose filenames (asksaveasfilename)
+    * Backup current setting/script as .bak (in the same folder as current files)
+    * Replace assignments inside EMProperties::LoadAdditionalProperties:
+      spot_atlas, mag_atlas, brightness_atlas, CLapt_for_atlas,
+      SquareMag, spot_square, brightness_square, CLapt_for_square,
+      CLapt_for_LDM
+    * Additionally, keep directory path but rewrite file names of:
+        cmd_MagAtlas  @= <path>\AtlasMag_<mag_atlas>_Spot<spot_atlas>.txt
+        cmd_MagSquare @= <path>\SquareMag_<SquareMag>_Spot<spot_square>.txt
+        cmd_MagRecord @= <path>\RecordMag_<Record_mag>_Spot<Record_spot>_Angle<Record_angle>_CLApt<CLapt_for_LDM>.txt
+      - If Record_* are empty and dummy is allowed, use Record_mag=60000, Record_spot=4, Record_angle=2
+    * In the setting file, replace ScriptPackagePath with the new script full path (single space after the token)
+"""
+
+import os
+import re
+import shutil
+import datetime 
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+
+# ---- SerialEM bridge (safe import) ----
+try:
+    import serialem as sem
+except Exception:
+    sem = None
+
+if sem is not None:
+    try:
+        sem.Echo("Settings GUI launched")
+    except Exception:
+        pass
+
+DEFAULT_DIR = r"C:\ProgramData\SerialEM"
+
+# ==== dummy control for Record_* ====
+DUMMY_RECORD_ALLOWED = True
+DUMMY_RECORD_VALUES  = {"Record_mag": "60000", "Record_spot": "4", "Record_angle": "2"}
+
+# ---- SerialEM helpers (best-effort) ----
+def get_cl_aperture_value():
+    """Return numeric CL aperture value or 'N/A'."""
+    if sem is None:
+        return "N/A"
+    try:
+        # Example JEOL plugin sequence (adjust if needed)
+        sem.PluginString('JEOL', 'SelectKind', '1')  # 1: CLA
+        sem.PluginString('JEOL', 'GetAptSize', '1')
+        val = sem.GetVariable("JEOLVal1")
+        return float(val)
+    except Exception:
+        pass
+    try:
+        sem.ReportProperty('JeolCondenserApertureID')  # -1: not set
+        val = sem.GetVariable("RepVal1")
+        if val is not None and float(val) >= 0:
+            return float(val)
+    except Exception:
+        pass
+    return "N/A"
+    
+def get_lowdose_area_state(area_letter):
+    """Return dict: mag, angle, spot, brightness, slit ('N/A' if not available)."""
+    dflt = {'mag': 'N/A', 'angle': 'N/A', 'spot': 'N/A', 'brightness': 'N/A', 'slit': 'N/A'}
+    if sem is None:
+        return dflt
+    # Try dict-like
+    try:
+        sem.GoToLowDoseArea(area_letter)  # {'mag','rotation','spot','brightness','slit'}
+        sem.ReportMag()
+        mag = sem.GetVariable("RepVal1")
+        sem.ReportSpotSize()
+        spot = sem.GetVariable("RepVal1")
+        sem.ReportAlpha()
+        angle = sem.GetVariable("RepVal1")
+        sem.ReportPercentC2()
+        brightness = sem.GetVariable("RepVal1")
+        sem.ReportEnergyFilter()
+        slit = sem.GetVariable("RepVal1")
+
+        return {
+        'mag': mag,
+        'angle': angle,
+        'spot': spot,
+        'brightness': brightness,
+        'slit':slit
+        }
+    except Exception:
+        pass
+
+    return dflt
+
+
+def read_current_state_into(model):
+    """Fill model from live SerialEM."""
+    model['CLapt_type'].set_safe(model['CLapt_type'].get() or 1)
+    model['CLapt_for_atlas'].set_safe(model['CLapt_for_atlas'].get() or 1)
+    model['CLapt_for_square'].set_safe(model['CLapt_for_square'].get() or 1)
+    model['CLapt_for_record'].set_safe(model['CLapt_for_record'].get() or 4)
+
+    for k, letter in [('View','V'), ('Focus','F'), ('Trial','T'), ('Search','S')]:
+        d = get_lowdose_area_state(letter)
+        model[f'{k}_mag'].set_safe(d['mag'])
+        model[f'{k}_angle'].set_safe(d['angle'])
+        model[f'{k}_spot'].set_safe(d['spot'])
+        model[f'{k}_brightness'].set_safe(d['brightness'])
+        model[f'{k}_slit'].set_safe(d['slit'])
+
+    d_rec = get_lowdose_area_state('R')
+    if all(d_rec[k] == 'N/A' for k in d_rec):
+        d_rec = get_lowdose_area_state('V')
+    model['Record_mag'].set_safe(d_rec['mag'])
+    model['Record_angle'].set_safe(d_rec['angle'])
+    model['Record_spot'].set_safe(d_rec['spot'])
+
+    ap = get_cl_aperture_value()
+    #model['CL_aperture_now'].set_safe(ap)
+
+def _today_yymmdd():
+    return datetime.date.today().strftime("%y%m%d")
+
+def _copy_as_bak(src_path, base_name_no_ext, folder, date_str):
+    """Copy src to <base>_<date>.bak in folder if src exists."""
+    if not src_path or not os.path.isfile(src_path):
+        return None
+    bak_name = f"{base_name_no_ext}_{date_str}.bak"
+    dst = os.path.join(folder, bak_name)
+    shutil.copy2(src_path, dst)
+    return dst
+
+def _replace_script_package_path(settings_text: str, new_script_fullpath: str) -> str:
+    """
+    Replace (or append if missing) 'ScriptPackagePath <path>' with the new full path.
+    Accept any whitespace after the token (tabs/spaces); normalize to single space.
+    """
+    if not isinstance(settings_text, str):
+        settings_text = "" if settings_text is None else str(settings_text)
+
+    newline = "\r\n" if "\r\n" in settings_text else "\n"
+    lines = settings_text.splitlines(keepends=True)
+    replaced = False
+    out_lines = []
+
+    for ln in lines:
+        idx = ln.find("ScriptPackagePath")
+        if idx == -1:
+            out_lines.append(ln)
+            continue
+
+        # strip EOL
+        if ln.endswith("\r\n"):
+            end = "\r\n"; core = ln[:-2]
+        elif ln.endswith("\n"):
+            end = "\n"; core = ln[:-1]
+        else:
+            end = ""; core = ln
+
+        head = core[:idx]
+        token = "ScriptPackagePath"
+        rest = core[idx+len(token):]
+
+        # swallow any whitespace after the token (tabs or spaces)
+        i = 0
+        while i < len(rest) and rest[i].isspace():
+            i += 1
+
+        new_core = head + token + " " + new_script_fullpath
+        out_lines.append(new_core + end)
+        replaced = True
+
+    if not replaced:
+        # ensure we end with newline before appending a fresh line
+        if out_lines and not (out_lines[-1].endswith("\n") or out_lines[-1].endswith("\r")):
+            out_lines[-1] = out_lines[-1] + newline
+        out_lines.append(f"ScriptPackagePath {new_script_fullpath}{newline}")
+
+    return "".join(out_lines)
+
+# ---- EMProperties read/update helpers ----
+def get_AtlasAndSquareFromEMproperties():
+    """Call EMProperties::LoadAdditionalProperties then read variables via sem.GetVariable()."""
+    if sem is None:
+        raise RuntimeError("serialem module not available")
+    try:
+        sem.CallFunction("EMProperties::LoadAdditionalProperties")
+    except Exception:
+        raise RuntimeError("Could not call EMProperties::LoadAdditionalProperties")
+
+    def _gv(name):
+        try:
+            return sem.GetVariable(name)
+        except Exception:
+            return None
+  
+    res = {}
+    res["spot_atlas"]        = _gv("spot_atlas") 
+    res["mag_atlas"]         = _gv("mag_atlas")
+    res["brightness_atlas"]  = _gv("brightness_atlas")
+    res["CLapt_for_atlas"]   = _gv("CLapt_for_atlas")
+
+    res["SquareMag"]         = _gv("SquareMag")
+    res["spot_square"]       = _gv("spot_square")
+    res["brightness_square"] = _gv("brightness_square")
+    res["CLapt_for_square"]  = _gv("CLapt_for_square")
+    res["CLapt_for_record"]  = _gv("CLapt_for_record") #add by FM
+
+    for k, v in list(res.items()):
+        if v is None or v == "":
+            res[k] = "N/A"
+    return res
+
+def apply_emprops_to_model(model, emprops_dict):
+    """Copy EMProperties-derived values into UI model."""
+    mapping = {
+        "spot_atlas":        "spot_atlas",
+        "mag_atlas":         "mag_atlas",
+        "brightness_atlas":  "brightness_atlas",
+        "CLapt_for_atlas":   "CLapt_for_atlas",
+        "SquareMag":         "SquareMag",
+        "spot_square":       "spot_square",
+        "brightness_square": "brightness_square",
+        "CLapt_for_square":  "CLapt_for_square",
+        "CLapt_for_record":  "CLapt_for_record",
+    }
+    for src, dst in mapping.items():
+        if dst in model and src in emprops_dict:
+            model[dst].set_safe(emprops_dict[src])
+
+# ---- EMProperties script rewrite ----
+_EMPROPS_TARGETS = [
+    # Atlas
+    "spot_atlas",
+    "mag_atlas",
+    "brightness_atlas",
+    "CLapt_for_atlas",
+    # Square
+    "SquareMag",
+    "spot_square",
+    "brightness_square",
+    "CLapt_for_square",
+    # LowDose (also used in cmd_MagRecord filename)
+    "CLapt_for_record",
+    # Record values used for cmd_MagRecord filename
+    "Record_mag", "Record_spot", "Record_angle",
+]
+
+def _build_replacement_map_for_save(model):
+    """Build a flat dict from model values to be injected into EMProperties script."""
+    rep = {}
+    # Atlas
+    rep["spot_atlas"]        = str(model["spot_atlas"].get())
+    rep["mag_atlas"]         = str(model["mag_atlas"].get())
+    rep["brightness_atlas"]  = str(model["brightness_atlas"].get())
+    rep["CLapt_for_atlas"]   = str(model["CLapt_for_atlas"].get())
+    # Square
+    rep["SquareMag"]         = str(model["SquareMag"].get())
+    rep["spot_square"]       = str(model["spot_square"].get())
+    rep["brightness_square"] = str(model["brightness_square"].get())
+    rep["CLapt_for_square"]  = str(model["CLapt_for_square"].get())
+    # LowDose
+    rep["CLapt_for_record"]     = str(model["CLapt_for_record"].get())
+    # Record (for cmd_MagRecord filename)
+    rep["Record_mag"]        = str(model["Record_mag"].get())
+    rep["Record_spot"]       = str(model["Record_spot"].get())
+    rep["Record_angle"]      = str(model["Record_angle"].get())
+    return rep
+
+def _replace_in_function_block(full_text: str, func_name: str, replacer):
+    """Apply replacer only inside a specific 'Function ... EndFunction' block; fallback to whole text if not found."""
+    m_start = re.search(rf'(?m)^\s*Function\s+{re.escape(func_name)}\s*$', full_text)
+    if not m_start:
+        return replacer(full_text)
+    m_end = re.search(r'(?m)^\s*EndFunction\s*$', full_text[m_start.end():])
+    if not m_end:
+        return replacer(full_text)
+
+    s = m_start.start()
+    e = m_start.end() + m_end.end()
+
+    head = full_text[:s]
+    block = full_text[s:e]
+    tail = full_text[e:]
+
+    new_block = replacer(block)
+    return head + new_block + tail
+
+
+def _replace_in_macro_block_robust(full_text: str, macro_name: str, replacer, debug=False):
+    if not isinstance(full_text, str):
+        full_text = "" if full_text is None else str(full_text)
+
+    # Split with keepends to reconstruct easily
+    lines = full_text.splitlines(keepends=True)
+
+    def _is_scriptname_line(ln: str) -> bool:
+        # remove leading spaces; check startswith 'scriptname' (case-insensitive)
+        s = ln.lstrip()
+        if not s.lower().startswith("scriptname"):
+            return False
+        # take the rest after 'scriptname'
+        rest = s[len("scriptname"):].strip()
+        # first word is macro ID; allow comments or extra tokens after
+        if not rest:
+            return False
+        first = rest.split(None, 1)[0]  # first token
+        return first.lower() == macro_name.lower()
+
+    def _is_endmacro_line(ln: str) -> bool:
+        # Allow "EndMacro", then anything/comments
+        s = ln.lstrip()
+        return s.lower().startswith("endmacro")
+
+    # locate start
+    start_idx = None
+    for i, ln in enumerate(lines):
+        if _is_scriptname_line(ln):
+            start_idx = i
+            break
+    if start_idx is None:
+        if debug:
+            print("[macro] start not found for:", macro_name)
+        return full_text  # no fallback
+
+    # locate end after start
+    end_idx = None
+    for j in range(start_idx + 1, len(lines)):
+        if _is_endmacro_line(lines[j]):
+            end_idx = j
+            break
+    if end_idx is None:
+        if debug:
+            print("[macro] EndMacro not found after:", macro_name)
+        return full_text  # no fallback
+
+    # Compose head / header / body / footer / tail
+    head   = "".join(lines[:start_idx])
+    header = lines[start_idx]                # includes newline
+    body   = "".join(lines[start_idx+1:end_idx])  # lines between
+    footer = lines[end_idx]                  # includes newline
+    tail   = "".join(lines[end_idx+1:])
+
+    # Apply replacer to body only
+    new_body = replacer(body)
+    if not isinstance(new_body, str):
+        new_body = "" if new_body is None else str(new_body)
+
+    return head + header + new_body + footer + tail
+
+
+def _replace_assignments_in_text(script_text, replace_map, case_sensitive=True, debug=False):
+    """
+    Replace lines of the form:
+      <var> = <anything>
+      <var> @= <anything>
+    Only the RHS is replaced; comments (# ...) are preserved.
+    """
+    if not isinstance(script_text, str):
+        script_text = "" if script_text is None else str(script_text)
+
+    key = (lambda s: s if case_sensitive else s.lower())
+    repl_map = {key(k): str(v) for k, v in replace_map.items()}
+
+    def _indent(s: str) -> str:
+        m = re.match(r"\s*", s or "")
+        return m.group(0) if m else ""
+
+    out_lines = []
+    changed_any = False
+
+    for raw_line in script_text.splitlines():
+        line = "" if raw_line is None else str(raw_line)
+        body, hash_mark, comment = line.partition('#')
+
+        op = None
+        idx = -1
+        if isinstance(body, str):
+            idx = body.find('@=')
+            if idx != -1:
+                op = '@='
+            else:
+                idx = body.find('=')
+                if idx != -1:
+                    op = '='
+
+        if op is None or idx < 0:
+            out_lines.append(line)
+            continue
+
+        left = body[:idx]
+        var = (left or "").strip()
+        if not var:
+            out_lines.append(line)
+            continue
+
+        lk = key(var)
+        if lk not in repl_map:
+            out_lines.append(line)
+            continue
+
+        indent = _indent(left)
+        newval = repl_map[lk]
+        new_body = f"{indent}{var} {op} {newval}"
+        new_line = new_body + (hash_mark + comment if hash_mark else "")
+        out_lines.append(new_line)
+        changed_any = True
+
+        if debug:
+            print(f"[replaced] {var} -> {newval}")
+
+    out = "\n".join(out_lines)
+    if script_text.endswith("\n") and not out.endswith("\n"):
+        out += "\n"
+    return out
+
+def _rewrite_cmd_mag_filenames(block_text: str, values: dict) -> str:
+    """
+    Inside EMProperties::LoadAdditionalProperties, rewrite only the FILENAME part of:
+      cmd_MagAtlas  @= <path>\<old>.txt  -> AtlasMag_<mag_atlas>_Spot<spot_atlas>.txt
+      cmd_MagSquare @= <path>\<old>.txt  -> SquareMag_<SquareMag>_Spot<spot_square>.txt
+      cmd_MagRecord @= <path>\<old>.txt  -> RecordMag_<Record_mag>_Spot<Record_spot>_Angle<Record_angle>_CLApt<CLapt_for_LDM>.txt
+    - Keep directory path as-is
+    - Preserve comments (# ...) and whitespace indentation
+    - Preserve surrounding quotes of RHS if present
+    """
+
+    # --- build new file names from provided values (assume dummy already applied by caller if needed) ---
+    mag_atlas   = str(values.get("mag_atlas", "") or "")
+    spot_atlas  = str(values.get("spot_atlas", "") or "")
+    square_mag  = str(values.get("SquareMag", "") or "")
+    spot_square = str(values.get("spot_square", "") or "")
+    clapt_ldm   = str(values.get("CLapt_for_LDM", "") or "")
+    rec_mag     = str(values.get("Record_mag", "") or "")
+    rec_spot    = str(values.get("Record_spot", "") or "")
+    rec_angle   = str(values.get("Record_angle", "") or "")
+
+    atlas_file  = f"AtlasMag_{mag_atlas}_Spot{spot_atlas}.txt" if (mag_atlas and spot_atlas) else None
+    square_file = f"SquareMag_{square_mag}_Spot{spot_square}.txt" if (square_mag and spot_square) else None
+    record_file = (
+        f"RecordMag_{rec_mag}_Spot{rec_spot}_Angle{rec_angle}_CLApt{clapt_ldm}.txt"
+        if (rec_mag and rec_spot and rec_angle and clapt_ldm) else None
+    )
+
+    def _choose_filename(varname: str):
+        if varname == "cmd_MagAtlas":
+            return atlas_file
+        if varname == "cmd_MagSquare":
+            return square_file
+        if varname == "cmd_MagRecord":
+            return record_file
+        return None
+
+    def _last_sep_pos(s: str) -> int:
+        """Return last index of path separator (\ or /), or -1 if none."""
+        bs = s.rfind("\\")
+        sl = s.rfind("/")
+        return bs if bs > sl else sl
+
+    out_lines = []
+    for raw in block_text.splitlines():
+        line = "" if raw is None else str(raw)
+
+        # split off comment (preserve # and the rest)
+        body, hash_mark, comment = line.partition('#')
+
+        # find operator "@="
+        op = "@="
+        idx = body.find(op)
+        if idx < 0:
+            out_lines.append(line)
+            continue
+
+        left  = body[:idx]
+        right = body[idx + len(op):]
+
+        var = left.strip()
+        newfname = _choose_filename(var)
+        if newfname is None:
+            # not the target variable or insufficient info to build filename
+            out_lines.append(line)
+            continue
+
+        # prepare RHS: keep quotes if present
+        rhs = right.strip()
+        quote = ""
+        inner = rhs
+        if (rhs.startswith('"') and rhs.endswith('"')) or (rhs.startswith("'") and rhs.endswith("'")):
+            quote = rhs[0]  # " or '
+            if len(rhs) >= 2 and rhs[-1] == quote:
+                inner = rhs[1:-1]
+            else:
+                inner = rhs  # malformed; treat as unquoted
+
+        # split dir and file
+        sep_pos = _last_sep_pos(inner)
+        if sep_pos >= 0:
+            dirpart = inner[:sep_pos+1]
+        else:
+            dirpart = ""
+
+        # indent from left part (preserve original indentation)
+        indent_len = len(left) - len(left.lstrip())
+        indent = left[:indent_len]
+
+        # rebuild body with same operator and spacing pattern: "<indent><var> @= <quoted_dir+newfname>"
+        new_rhs_inner = dirpart + newfname
+        new_rhs = f"{quote}{new_rhs_inner}{quote}" if quote else new_rhs_inner
+        new_body = f"{indent}{var} {op} {new_rhs}"
+
+        # reattach comment if existed
+        new_line = new_body + (hash_mark + comment if hash_mark else "")
+        out_lines.append(new_line)
+
+    out = "\n".join(out_lines)
+    if block_text.endswith("\n") and not out.endswith("\n"):
+        out += "\n"
+    return out
+
+
+# ---- Model (fields) ----
+class FieldVar:
+    def __init__(self, default=""):
+        self.value = tk.StringVar(value=str(default))
+    def get(self):
+        return self.value.get().strip()
+    def set(self, v):
+        self.value.set("" if v is None else str(v))
+    def set_safe(self, v):
+        self.set(v)
+
+def make_model():
+    m = {}
+    # Atlas
+    m['spot_atlas'] = FieldVar(5)
+    m['mag_atlas'] = FieldVar(50)
+    m['brightness_atlas'] = FieldVar(100)
+    m['CLapt_type'] = FieldVar(1)
+    m['CLapt_for_atlas'] = FieldVar(1)
+    # Square
+    m['SquareMag'] = FieldVar(200)
+    m['spot_square'] = FieldVar(4)
+    m['brightness_square'] = FieldVar(100)
+    m['CLapt_for_square'] = FieldVar(1)
+    # LowDose
+    for k in ['View','Focus','Trial','Search']:
+        m[f'{k}_mag'] = FieldVar("")
+        m[f'{k}_angle'] = FieldVar("")
+        m[f'{k}_spot'] = FieldVar("")
+        m[f'{k}_brightness'] = FieldVar("")
+        m[f'{k}_slit'] = FieldVar("")
+    # Record (from LowDose)
+    m['Record_mag'] = FieldVar("")
+    m['Record_spot'] = FieldVar("")
+    m['Record_angle'] = FieldVar("")
+    m['CLapt_for_record'] = FieldVar(4)
+    # Info
+    #m['CL_aperture_now'] = FieldVar("N/A")
+    return m
+
+# ---- Settings file I/O (INI-like) ----
+INI_HEADER = "# SerialEM Settings (INI-like)\n"
+
+def serialize_settings(model):
+    """Serialize current model to an INI-like text."""
+    lines = [INI_HEADER]
+    lines += ["[Atlas]",
+              f"spot_atlas={model['spot_atlas'].get()}",
+              f"mag_atlas={model['mag_atlas'].get()}",
+              f"brightness_atlas={model['brightness_atlas'].get()}",
+              f"CLapt_type={model['CLapt_type'].get()}",
+              f"CLapt_for_atlas={model['CLapt_for_atlas'].get()}",
+              ""]
+    lines += ["[Square]",
+              f"SquareMag={model['SquareMag'].get()}",
+              f"spot_square={model['spot_square'].get()}",
+              f"brightness_square={model['brightness_square'].get()}",
+              f"CLapt_for_square={model['CLapt_for_square'].get()}",
+              ""]
+    lines += ["[LowDose_Record]",
+              f"Record_mag={model['Record_mag'].get()}",
+              f"Record_spot={model['Record_spot'].get()}",
+              f"Record_angle={model['Record_angle'].get()}",
+              f"CLapt_for_LDM={model['CLapt_for_LDM'].get()}",
+              ""]
+    for k in ['View','Focus','Trial','Search']:
+        lines += [f"[LowDose_{k}]",
+                  f"{k}_mag={model[f'{k}_mag'].get()}",
+                  f"{k}_angle={model[f'{k}_angle'].get()}",
+                  f"{k}_spot={model[f'{k}_spot'].get()}",
+                  f"{k}_brightness={model[f'{k}_brightness'].get()}",
+                  f"{k}_slit={model[f'{k}_slit'].get()}",
+                  ""]
+    #lines += ["[Info]",
+    #          f"CL_aperture_now={model['CL_aperture_now'].get()}",
+    #          ""]
+    return "\n".join(lines)
+
+def parse_settings(text, model):
+    """Parse INI-like text into model fields."""
+    sec = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            sec = line[1:-1]; continue
+        if "=" in line:
+            k, v = [s.strip() for s in line.split("=", 1)]
+            if sec == "Atlas" and k in model:
+                model[k].set_safe(v)
+            elif sec == "Square" and k in model:
+                model[k].set_safe(v)
+            elif sec == "LowDose_Record" and k in model:
+                model[k].set_safe(v)
+            elif sec and sec.startswith("LowDose_"):
+                if k in model:
+                    model[k].set_safe(v)
+            elif sec == "Info" and k in model:
+                model[k].set_safe(v)
+
+# ---- GUI ----
+class App(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("SerialEM Settings Bundler")
+        self.geometry("980x760")
+        self.model = make_model()
+
+        # Menu
+        menubar = tk.Menu(self)
+        filemenu = tk.Menu(menubar, tearoff=0)
+        filemenu.add_command(label="Save As", command=self.on_save_as)
+        filemenu.add_command(label="Load another settings file", command=self.on_load)
+        #filemenu.add_command(label="Read (from SerialEM)", command=self.on_read_current)
+        #filemenu.add_separator()
+        #filemenu.add_command(label="Read from EMProperties", command=self.on_read_from_emprops)
+        #filemenu.add_separator()
+        filemenu.add_command(label="Exit", command=self.destroy)
+        menubar.add_cascade(label="File", menu=filemenu)
+        self.config(menu=menubar)
+
+        # Filename controls (still used for default names)
+        top = ttk.LabelFrame(self, text="Filename options")
+        top.pack(fill="x", padx=8, pady=6)
+        self.var_name = tk.StringVar(value="config")
+        self.var_date = tk.StringVar(value=_today_yymmdd())
+        self.use_name = tk.BooleanVar(value=True)
+        self.use_date = tk.BooleanVar(value=True)
+        ttk.Checkbutton(top, text="use name", variable=self.use_name).pack(side="left", padx=6)
+        ttk.Entry(top, textvariable=self.var_name, width=20).pack(side="left", padx=4)
+        ttk.Checkbutton(top, text="use date (YYMMDD)", variable=self.use_date).pack(side="left", padx=6)
+        ttk.Entry(top, textvariable=self.var_date, width=10).pack(side="left", padx=4)
+
+        # Tabs
+        nb = ttk.Notebook(self)
+        nb.pack(expand=True, fill="both", padx=8, pady=6)
+        nb.add(self._tab_atlas(), text="Atlas / Square")
+        nb.add(self._tab_lowdose(), text="Low Dose")
+        #nb.add(self._tab_info(), text="Info")
+
+        # Status
+        self.status = tk.StringVar(value="Ready.")
+        ttk.Label(self, textvariable=self.status, anchor="w").pack(fill="x", padx=8, pady=(0,8))
+
+        # Auto bootstrap from EMProperties
+        self.after(200, self.bootstrap_from_emprops)
+
+    # Tabs
+    def _tab_atlas(self):
+        f = ttk.Frame()
+        frA = ttk.LabelFrame(f, text="Setting for Atlas")
+        frA.pack(fill="x", padx=8, pady=6)
+        self._row(frA, "mag_atlas", "spot_atlas",  "brightness_atlas")
+        self._row(frA, "CLapt_type", "CLapt_for_atlas")
+        frS = ttk.LabelFrame(f, text="Setting for Square")
+        frS.pack(fill="x", padx=8, pady=6)
+        self._row(frS, "SquareMag", "spot_square", "brightness_square")
+        self._row(frS, "CLapt_for_square")
+
+        ttk.Button(f, text="Read EMProperties from current script", command=self.bootstrap_from_emprops).pack(padx=8, pady=6, anchor="e") #bootstrap_from_emprops
+ 
+        return f
+
+
+    def _tab_lowdose(self):
+        f = ttk.Frame()
+        frR = ttk.LabelFrame(f, text="Setting for recorded Mag (from Low Dose)")
+        frR.pack(fill="x", padx=8, pady=6)
+        self._row(frR, "Record_mag", "Record_spot", "Record_angle", "CLapt_for_record")
+
+        for k in ['View','Focus','Trial','Search']:
+            fr = ttk.LabelFrame(f, text=f"Low Dose: {k}")
+            fr.pack(fill="x", padx=8, pady=6)
+            self._row(fr, f"{k}_mag", f"{k}_angle", f"{k}_spot", f"{k}_brightness", f"{k}_slit")
+
+        frI = ttk.LabelFrame(f, text="CL aperture for Record")
+        frI.pack( fill="x", padx=8, pady=6 )
+
+        ttk.Button(f, text="Read current Low Dose Control setting", command=self.on_read_current).pack(padx=8, pady=6, anchor="e") 
+        #row = ttk.Frame(frI)
+        #row.pack(fill="x",padx=8, pady=6)
+        #ttk.Label(row, text="CL_aperture_now").pack(side="left", padx=(0,4))
+        #e = ttk.Entry(row, textvariable=self.model["CL_aperture_now"].value, width=14)
+        #e.state(["readonly"])
+        #e.pack(side="left", padx=(0,12))
+        return f
+
+
+    def _tab_info(self):
+        f = ttk.Frame()
+        frI = ttk.LabelFrame(f, text="Current (read-only hints)")
+        frI.pack(fill="x", padx=8, pady=6)
+        self._row(frI, "CL_aperture_now")
+        ttk.Button(f, text="Read now (SerialEM)", command=self.on_read_current).pack(padx=8, pady=6, anchor="e")
+        return f
+
+    def _row(self, parent, *keys):
+        row = ttk.Frame(parent)
+        row.pack(fill="x", padx=6, pady=3)
+        for k in keys:
+            ttk.Label(row, text=k).pack(side="left", padx=(0,4))
+            e = ttk.Entry(row, textvariable=self.model[k].value, width=14)
+            e.pack(side="left", padx=(0,12))
+
+    # Actions
+    def _set_status(self, msg):
+        self.status.set(msg)
+        self.update_idletasks()
+
+    def on_read_current(self):
+        try:
+            if sem is None:
+                raise RuntimeError("serialem module not available")
+            read_current_state_into(self.model)
+            self._set_status("Read current state from SerialEM (N/A where unavailable).")
+        except Exception as e:
+            messagebox.showwarning("Read", f"Could not read from SerialEM: {e}")
+            self._set_status("Read failed; showing existing values.")
+   
+    def on_save_as(self):
+        try:
+            if sem is None:
+                raise RuntimeError("serialem module not available")
+   
+            # (1) current setting/script paths
+            sem.ReportSettingsFile()
+            current_setting = sem.GetVariable("RepVal1")
+            sem.ReportSettingsFile()
+            current_script  = sem.GetVariable("RepVal2")
+   
+            if not current_script or not os.path.isfile(current_script):
+                raise FileNotFoundError(f"Script file not found (RepVal2): {current_script}")
+            if not current_setting or not os.path.isfile(current_setting):
+                raise FileNotFoundError(f"Setting file not found (RepVal1): {current_setting}")
+
+            # (2) backup to .bak (in current files' folder)
+            cur_folder = os.path.dirname(current_script)
+            set_base = os.path.splitext(os.path.basename(current_setting))[0]
+            scr_base = os.path.splitext(os.path.basename(current_script))[0]
+            date_str = self.var_date.get().strip()
+            if not re.fullmatch(r"\d{6}", date_str):
+                date_str = _today_yymmdd()
+            _copy_as_bak(current_setting, set_base, cur_folder, date_str)
+            _copy_as_bak(current_script,  scr_base, cur_folder, date_str)
+
+            # (3) choose destination folder first
+            initdir = cur_folder if os.path.isdir(cur_folder) else (DEFAULT_DIR if os.path.isdir(DEFAULT_DIR) else os.getcwd())
+            target_folder = filedialog.askdirectory(
+                title="Choose destination folder for new setting/script files",
+                initialdir=initdir
+            )
+            if not target_folder:
+                self._set_status("Save canceled (folder not chosen).")
+                return
+
+            # (4) propose default filenames (editable in save dialogs)
+            use_name = self.var_name.get().strip() if self.use_name.get() else ""
+            suffix = f"_{use_name}" if use_name else ""
+            def_set_name = f"{set_base}{suffix}_{date_str}.txt"
+            def_scr_name = f"serialEMscripts{suffix}_{date_str}.txt"
+
+            # (5) ask filenames (setting then script) within the chosen folder
+            new_settings_path = filedialog.asksaveasfilename(
+                title="Save settings as...",
+                initialdir=target_folder,
+                initialfile=def_set_name,
+                defaultextension=".txt",
+                filetypes=[("Text files","*.txt"),("All files","*.*")]
+            )
+            if not new_settings_path:
+                self._set_status("Save canceled (settings filename not chosen).")
+                return
+
+            new_script_path = filedialog.asksaveasfilename(
+                title="Save EMProperties script as...",
+                initialdir=target_folder,
+                initialfile=def_scr_name,
+                defaultextension=".txt",
+                filetypes=[("Text files","*.txt"),("All files","*.*")]
+            )
+            if not new_script_path:
+                self._set_status("Save canceled (script filename not chosen).")
+                return
+
+            # (6) load current script
+            with open(current_script, "r", encoding="utf-8") as f:
+                src_script = f.read()
+
+            # (7) build replacement map from UI
+            replace_map = _build_replacement_map_for_save(self.model)
+            # fill Record_* with dummy if allowed and empty
+            if DUMMY_RECORD_ALLOWED:
+                for k, dv in DUMMY_RECORD_VALUES.items():
+                    if replace_map.get(k, "").strip() == "":
+                        replace_map[k] = dv
+
+            # (8) replace assignments inside EMProperties::LoadAdditionalProperties
+            def _do_replace(block_text):
+                return _replace_assignments_in_text(block_text, replace_map, case_sensitive=True, debug=False)
+            out_script = _replace_in_macro_block_robust(src_script, "EMProper", _do_replace)
+
+            # (9) rewrite cmd_Mag* filenames (keep path)
+            def _do_cmd_rewrite(block_text):
+                return _rewrite_cmd_mag_filenames(block_text, replace_map)
+            out_script = _replace_in_macro_block_robust(out_script, "LoadAdditionalProperties", _do_cmd_rewrite)
+
+            # (10) write new EMProperties script with header
+            newline = "\r\n"
+            header = (
+                f"### Auto-saved by Settings Bundler (Save As){newline}"
+                f"### Based on: {os.path.basename(current_script)}{newline}"
+                f"### Linked settings: {os.path.basename(new_settings_path)}{newline}"
+                f"{newline}"
+            )
+            with open(new_script_path, "w", encoding="utf-8") as f:
+                f.write(out_script) #edit by FM
+
+            # (11) load current settings, replace ScriptPackagePath with new script path, and save
+            with open(current_setting, "r", encoding="utf-8") as f:
+                src_settings = f.read()
+            out_settings = _replace_script_package_path(src_settings, new_script_path)
+            with open(new_settings_path, "w", encoding="utf-8") as f:
+                f.write(out_settings)
+   
+            messagebox.showinfo(
+                "Save As",
+                "Saved:"+"\n"
+                f"  new setting : {new_settings_path}"+"\n"
+                f"  new script  : {new_script_path}"
+            )
+            self._set_status("Save As completed.")
+   
+        except Exception as e:
+            messagebox.showerror("Save As", str(e))
+            self._set_status("Save As failed.")
+      
+    def on_load(self):
+        """Load an INI-like settings file into the UI."""
+        initdir = DEFAULT_DIR if os.path.isdir(DEFAULT_DIR) else os.getcwd()
+        path = filedialog.askopenfilename(
+            title="Load settings",
+            initialdir=initdir,
+            filetypes=[("Text files","*.txt"),("All files","*.*")]
+        )
+        if not path:
+            self._set_status("Load canceled.")
+            return
+        sem.LoadSettingsFile(path)
+        #try:
+        #    with open(path, "r", encoding="utf-8") as f:
+         #       txt = f.read()
+         #   parse_settings(txt, self.model)
+         #   self._set_status(f"Loaded: {path}")
+        #except Exception as e:
+        #    messagebox.showerror("Load", str(e))
+        #    self._set_status("Load failed.")
+
+    def on_read_from_emprops(self):
+        """Read Atlas/Square values from EMProperties into UI fields."""
+        try:
+            if sem is None:
+                raise RuntimeError("serialem module not available")
+            d = get_AtlasAndSquareFromEMproperties()
+            apply_emprops_to_model(self.model, d)
+            self._set_status("Loaded Atlas/Square values from EMProperties.")
+        except Exception as e:
+            messagebox.showwarning("EMProperties", f"Failed: {e}")
+            self._set_status("Read from EMProperties failed.")
+
+    def bootstrap_from_emprops(self):
+        """Auto-run on startup: fill from EMProperties."""
+        try:
+            if sem is None:
+                self._set_status("serialem module not available; skipped EMProperties bootstrap.")
+                return
+            d = get_AtlasAndSquareFromEMproperties()
+            apply_emprops_to_model(self.model, d)
+        except Exception as e:
+            self._set_status(f"EMProperties bootstrap failed: {e}")
+
+if __name__ == "__main__":
+    app = App()
+    app.mainloop()
+    
+EndMacro
+Macro	60
+ReportImageShift 
+EndMacro
+Macro	61
+MultipleRecords 
+EndMacro
+Macro	62
+SetEucentricFocus 
+EndMacro
+Macro	63
+SetImageShift 0 0
+EndMacro
+Macro	64
+LongOperation FF 0
+EndMacro
+Macro	65
+AdjustStagePosForNav 0 0
+EndMacro
+Macro	66
+Eucentricity -1 0
+EndMacro
+Macro	67
+ReportCurrentMulGridID 
+EndMacro
+Macro	68
+SetImageShift 0 0
+EndMacro
+Macro	69
+MoveStage 0 0 -10
+EndMacro
