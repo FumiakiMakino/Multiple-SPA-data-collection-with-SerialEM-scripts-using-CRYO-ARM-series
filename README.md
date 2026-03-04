@@ -1,223 +1,183 @@
+![image](https://github.com/user-attachments/assets/8b503322-9429-48b2-9158-4c02f7806925)# SerialEM SPA scritps for CRYO ARM series
 
-# SerialEM SPA Scripts for JEOL CRYO ARM Series
 
-## 前置き / Introduction
 
+## 前置き  introduction
 本スクリプトは、JEOL製 CRYO ARM シリーズ（CRYO ARM 200、300、300Ⅱ）における単粒子解析用データ収集（SPA data collection）およびマルチグリッド運用に対応したものです。
-その他の装置（JEOL F200 や Thermo Fisher Scientific 社製装置など）での動作は保証しておりません。
-
-本ページでは、大阪大学大学院生命機能研究科で使用している CRYO ARM 300 用スクリプトを提供しています。
-他の装置で使用する場合に不具合などが生じた場合は、大阪大学大学院生命機能研究科 難波研究室 牧野
-または JEOL のクライオサポートチームまでご連絡ください。
+その他の装置（JEOL F200 や Thermo Fisher Scientific 社製装置など）での動作は保証しておりません。また、阪大生命機能科学科のCRYO ARM 300で動作しているスクリプトを提供します。もし、他の装置で運用する場合に不具合等あった場合は大阪大学大学院生命機能研究科 難波研究室 牧野かJEOLのクライオサポートチームに連絡をください。
 
 使用する SerialEM のバージョンは 4.2 以上を推奨します。
-また、本スクリプトの動作には Bart の plugin が必須です。
-
-Plugin manual:
+また、本スクリプトの動作には Bart の plugin が必須です。インストール方法については、以下のリンクのManual_v-1-3.pdf をご参照ください。
 https://bio3d-mirror.nexperion.net/ftp/SerialEM/Tools/JeolTemExtPlugin/
 
-このマニュアルは個人的に作成したものであり、説明が不十分な箇所が含まれている可能性があります。
-また、本マニュアルおよびスクリプトの二次配布や直リンクは禁止します。
+本スクリプトをインストールする場合は、以下に記載した手順に従って設定してください。
+また、操作マニュアルも同サイトにて配布しております。
 
-問い合わせ先:
+なお、このマニュアルは個人的に作成したものであり、十分に清書されていない部分や説明が不十分な箇所が含まれている可能性があります。あらかじめご了承ください。
+
+また、本マニュアルおよびスクリプトの二次配布や、ファイルへの直接リンク（直リンク）は一切禁止いたします。
+
+本マニュアルを整理・清書した正式版については、JEOL 側に依頼して装置へインストールされた場合に提供されます。
+内容は概ね同様ですが、正式版をお持ちの場合はそちらをご参照ください。
+https://github.com/FumiakiMakino/Multiple-SPA-data-collection-with-SerialEM-scripts-using-CRYO-ARM-series/blob/bfe698c861ee2f44a79467c884d560721d6856dc/SerialEMsettings-script_SPA-Muye
+
+もし不明な点がありましたら、日本電子（JEOL）のアプリケーションエンジニア、または
+大阪大学大学院生命機能研究科 難波研究室 牧野までお問い合わせください。
+
 makino.fumiaki.fbs[at]osaka-u.ac.jp
 
-English version:
-https://github.com/fmakino/SerialEM_SPAScripts_for_CRYO_ARM_series/blob/main/README_EN.md
 
 
-------------------------------------------------------------
+*更新は下に記載しています。
 
-# 日本電子装置での SPA データ収集の考え方
+This script is for data collection of single particle analysis on JEOL's CRYO ARM series (200, 300, 300Ⅱ)....
 
-JEOL装置ではステージ精度がそれほど高くないため、SerialEMの従来方法では正確な位置合わせに多くの時間が必要になります。
-また LowMag → Mag 移行時のヒステリシスも大きいため、頻繁なモード移動は推奨されません。
+English version is [here](https://github.com/fmakino/SerialEM_SPAScripts_for_CRYO_ARM_series/blob/main/README_EN.md).
 
-本スクリプトでは位置精度を多少犠牲にして速度を優先する設計を採用しています。
-この方法を Osaka Framework と呼びます。
+### 日本電子の装置を使用した単粒子解析のデータ収集(SPAデータ収集)の考え方  
+・日本電子の装置はステージの精度がそれほど高くありません。そのため、SerialEMの従来のやり方では正確に場所をアライメントするために色々な工夫や正確なアライメントを行うための時間が必要になってしまいます。また、LowMagからMagに移行した際のヒステリシスも大きいので頻繁な行き来はお勧めできないのも理由の一つです。
+そこで、正確性を少し犠牲にして速さを追求し、ヒステリシスを考慮したのが、私たちが提供するスクリプトです。これはOsaka Frameworkと呼ばれるものです。1スクエアのスクリーニングが30-60分、その後データ収集に+30分が目標です。 
 
-目標
+ここで注意が必要なのは一度Magに移行してからはなるべくLowMagに行かないようにすることです。どうしても必要な場合は再度ビームのアライメント調整が必要です。
 
-Square screening : 30–60 min
-Data collection preparation : +30 min
+この考え方はマルチグリッド対応になっても変更ありません。従って、バッチでGlobal mapを取得したあと、同じくバッチでスクエアマップを取得する手順を薦めています。
 
-一度 Mag モードに移行した後は、できるだけ LowMag に戻らないようにしてください。
-戻る場合はビームアライメントが必要になります。
+*ワークフローの図
 
 
-------------------------------------------------------------
-
-# Script (Osaka University)
-
-CRYO ARM 300
-
-https://github.com/fmakino/SPAscripts-using-SerialEM-for-CRYOARMseries/blob/main/SerialEMsettings-script_Fukumura-Makino_z300_simple.txt
+また、それぞれの作業を説明した動画を各項目でリンクしています。
+  
+  
+大阪大学大学院生命機能研究科で使用しているスクリプト  
+[CRYO ARM 300](https://github.com/fmakino/SPAscripts-using-SerialEM-for-CRYOARMseries/blob/main/SerialEMsettings-script_Fukumura-Makino_z300_simple.txt)  
 
 
-------------------------------------------------------------
 
-# CL aperture setting
+このとき、CL apertureが2段の場合はProperty fileに "JeolHasExtraApertures 1"を追加すること。EMPropertiesのCLapt_typeの値は、0は上段のCL aperture, 1は下段のCL aperture (SetApertureSizeのコマンドと同様の動き)となる。
 
-2段 CL aperture の場合 Property file に追加
-
-JeolHasExtraApertures 1
-
-Example
-
+```bash　　
 ScriptName EMProperties
 
-CLapt_type = 0
-Arm300I = 1
 
-CLapt_for_record = 2
-CLapt_for_view = 2
-
-
-追加設定
-
-JeolHasNitrogenClass 2
-
-
-------------------------------------------------------------
-
-# 事前準備
-
-・SerialEM calibration 完了
-・SerialEM ver4.2 以上
-
-Focus/Tune → Drift Protection ON
-
-Hole template を以下にコピー
-
-C:\ProgramData\SerialEM\Data\HoleImage\hole_template.mrc
-
-動画
-https://youtu.be/zP3PCU6qTfY
+# CL aperture
+# 0: CryoARM200, CryoARM200CA, CryoARM300II, F200
+# 1: 2nd CL aperture of first gen CryoARM300
+CLapt_type = 0 #1, For JEOL plugin, 1 means 2nd CL aperture
+Arm300I = 1 # CryoARM300I, open apertures
+CLapt_for_record = 2 #1 CLapt for record, 0: Remove, 1: No.1, 2: No.2, 3:No.3, 4:No.4
+CLapt_for_view = 2 #1 CLapt for record, 0: Remove, 1: No.1, 2: No.2, 3:No.3, 4:No.4
+        
+```
+これらのスクリプトを使用する場合、プロパティファイルにJeolHasNitrogenClassを2に設定してください。
 
 
-------------------------------------------------------------
+上記リンクからではなく、codeからzipをダウンロードしてtextファイルとしてダウンロードしてください。 
+   
 
-# Script installation
-
-例
-
-C:\ProgramData\SerialEM\
-
-SerialEM menu
-
-Script → Load new package
-
-動画
-https://youtu.be/m1iIJxrMrSQ
+## 事前準備、用意しておくこと
+・SerialEMのキャリブレーションとインストール(ver4.2以上 推奨)が完了していること  
+  
+・Focus/Tuneメニュー  Drift Protection にチェックが入っていること  
+  
+・デフォルトのホールテンプレート(よく使うホールの大きさで作成しておく)を準備し、C:¥ProgramData¥SerialEM¥Data¥HoleImage¥hole_template.mrc  
+に事前にコピーしておくこと。  
+  
+[説明動画(旧スクリプトによる説明)：PyJEM関連とhole templateについて](https://youtu.be/zP3PCU6qTfY)
 
 
-------------------------------------------------------------
+## 新しいスクリプトのインストール方法  
+新しいスクリプトをダウンロード後、任意の場所にコピー(例：C:¥ProgramData¥SerialEM¥)  
+SerialEM上部のメニューscript --> Load new packageから先程コピーしたスクリプトをロードする。  
+[説明動画(旧スクリプトによる説明)：インストールについて](https://youtu.be/m1iIJxrMrSQ)  
+  
+### EMProperties の値を確認および入力    
+　もし以前同様のスクリプトを使用していた場合は下記の値をそちらからコピーすると簡単で早い（変数名が変更してある可能性があるので注意が必要である）。  ここでは難波研究室CRYO ARM 300Ⅱでの使用例をのせる。    
+   
+__JEOL TEM type__   
+・CLapt_type = 0 : # 0: CryoARM200, CryoARM200CA, CryoARM300II, F200  
+                 # 1: 2nd CL aperture board, CryoARM300  
+・ARM300：CRYO ARM 300(Z300), set to 0.  
 
-# EMProperties
+__Stage setting__  
+・safty_z_lower = -210 #[um], safty_z_upper = 205 #[um] :zの限界値  
+・eucentric_height = 0 # [um] ：0がデフォルト  
+・koehler_z_offset = 0 # [um] ：0がデフォルト、ケラーモード使う場合は-120程度入れるとよい。
 
-Example (CRYO ARM 300II)
+__Setting for Atlas__  
+・default_spot_atlas: Atlas map作成時のspotサイズ  
+・mag_atlas: Atlas map作成時の倍率(CRYO ARM 300なら50,  CRYO ARM 200なら30)  
+・brightness_atlas: 100%が多く使われる。  
+        
+__Setting for Square__  
+・default_SquareMag = 150：squaremapを取得するときの倍率  
+・spot_square = 4：squaremapを取得するときのspot size  
+・brightness_square = 100：100%が多く使われる。ただしenergy filterを入れる場合はその限りではなく、ちょうどよい明るさが存在する。FL focusと合わせて調整するとよい。  
 
-JEOL TEM
-
-CLapt_type = 0
-ARM300 = 0
-
-
-Stage
-
-safty_z_lower = -210
-safty_z_upper = 205
-eucentric_height = 0
-koehler_z_offset = 0
-
-
-Atlas
-
-mag_atlas
-default_spot_atlas
-brightness_atlas
-
-
-Square
-
-default_SquareMag = 150
-spot_square = 4
-brightness_square = 100
-
-
-------------------------------------------------------------
-
-# FOV adjustment
-
-cmd_MagAtlas
-cmd_MagSquare
-cmd_MagRecord
-
-初回設定
-
-1 move magnification
-2 SaveAtlasMag / SaveSquareMag / SaveRecordMag
-3 AdjustFOV_byDrag-FLA
-
-
-Python setting
-
-EnableExternalPython 1
+__Setting for FOV adjustment between Low-mag and record mag__         
+ #Call Lens Alignment 
+・cmd_MagAtlas @= C:\ProgramData\SerialEM\afs\LowMag30.txt
+・cmd_MagSquare @= C:\ProgramData\SerialEM\afs\LowMag150.txt
+・cmd_MagRecord @= C:\ProgramData\SerialEM\afs\MagMode60k.txt
+  ：最初にこれらの値を設定する場合、まずはそれぞれの倍率に移動しSaveAtlasMag, SaveSquareMag, SaveRecordMagを行うこと。その後、AdjustFOV_byDrag-FLAのスクリプトを動かすこと。このスクリプトにはpythonライブラリを使用するため、pythonのパスを通して使用できるようするようにすること。以下にSerialEMproperties.txtへpythonモジュールの追加例を掲載する。
+  ```bash　　
+EnableExternalPython			1
 PathToPython 312 C:\Users\End-user\AppData\Local\Programs\Python\Python312\
+```
+ 詳しくは以下のリンク先を参考
+ https://bio3d.colorado.edu/SerialEM/download.html#PythonModules
+ 
+__YoneoLocr__  
+・progdir = C:\Users\VALUEDGATANCUSTOMER\Desktop\yoneoLocr-main ： Hole alignにYoneoLocrを使用する場合はこの変数progdirにプログラムが参照する場所として指定する。  
+＊事前にYoneoLocrのインストールなどが必要です。これについてはYoneoLocrの[サイト](https://github.com/YonekuraLab/yoneoLocr)を参照してください。また、使用した場合は論文への引用も忘れないようにしてください。
 
-https://bio3d.colorado.edu/SerialEM/download.html#PythonModules
+他にも沢山の値が存在するが必要最低限なものは以上。  
 
+  
 
-------------------------------------------------------------
-
-# YoneoLocr
-
-progdir = C:\Users\...\yoneoLocr-main
-
-https://github.com/YonekuraLab/yoneoLocr
-
-論文引用を忘れないこと
-
-
-------------------------------------------------------------
-
-# Scripts to check
-
-SPADataCollection_Screening
-
-target defocus
--1.4 ～ -2.0
-
-use_YL = 1
-
-video
-https://youtu.be/SymgfCqZiIg
+### スクリプトについての注意点  
+＊EMPropertiesの値は普段変更を加えない(FOVの調整は１週間に一度程度が推奨)。    
+＊このスクリプトではそれぞれのparameter(defocus、flashingのタイミング、zero loss peakの調整[FL focusの調整])はSerialEMを使用して変更するようにした。詳しくはマニュアルを参照
 
 
-AligncomaAndStig / FullAutoAligncomaAndStig
+  
+### 確認すべきスクリプト  
+**1. SPADataCollection_Screening**  
+動作確認のみ。  
+スクリプトAutoFocusRoutine を確実に動かすためにFocusメニュー”target defocus” で-1.4~-2.0にsetすることを忘れずにすること。  
+スクリプトAlignToHoleを動かす際にYoneoLocrのYoneoHole ([Yonekura et al. 2021](https://www.nature.com/articles/s42003-021-02577-1)　[入手先](https://github.com/YonekuraLab/yoneoLocr))を使用する場合にはuse_YL = 1にすること。このとき、YoneoHoleを起動することを忘れずに行うこととaligntohole内のuse_YLの方が優先されるので注意が必要。  
+[説明動画](https://youtu.be/SymgfCqZiIg)
 
-settle_time = 10
-exp_time = 1
+**2.AligncomaAndStig or FullAutoAligncomaAndStig**  
+動作確認のみ。  
+settle_time = 10 sec  
+exp_time = 1(氷の厚さなどによる)  
+もし、うまく動かない場合：高さ調整かAutoFocusがうまく行ってない場合が多い。どちらも、AutoFocusのキャリブレーションで直る場合が多い。  
+[説明動画](https://youtu.be/ngeKlpl55SU)
 
-video
-https://youtu.be/ngeKlpl55SU
-
-
-ZLPalignByFL
-
-search_range = 40
-
-
-SPADataCollection
-
-AutoFocusbyOL
-AutoFocusbyZ
+**3. ZLPalignByFL**  
+動作確認。コマンドプロンプトが現れることと、JEOL PCのTemCenterのFLFが変更していあるかどうかを確認。または画像が一度でも暗くなると良い。  
+parameters: search_range = 40 がデフォルト
 
 
-------------------------------------------------------------
+**4. SPADataCollection**   
+AutoFocusbyOLとbyZで確認  
+＊頻繁に変えるものは最初の行に記載してある。  
 
-# CryoARM200 script
 
-SerialEMsettings-script_Fukumura-Makino_z200_simple.txt
+＊ CRYO ARM 200用のスクリプト　"SerialEMsettings-script_Fukumura-Makino_z200_simple.txt"をアップロードしました。yoneohole起動時の動作のみ異なります。未検収。　　
 
-※未検証
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
