@@ -167,7 +167,7 @@ parameters: search_range = 40 がデフォルト
  ワークフローに従い実行してみる。詳しくはマニュアル参照。
 
 
-＊ CRYO ARM 200用のスクリプト　"SerialEMsettings-script_Fukumura-Makino_z200_simple.txt"をアップロードしました。yoneohole起動時の動作のみ異なります。未検収。　　
+＊ CRYO ARM 200用のスクリプト。yoneohole起動時の動作のみ異なります。未検収。　　
 
 
 
