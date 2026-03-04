@@ -52,10 +52,9 @@ The contents are generally the same; however, if you have access to the official
 
 If you have any questions, please contact a JEOL application engineer, or
 
-Fumiaki Makino
-Namba Lab.
-Graduate School of Frontier Biosciences
-The University of Osaka.
+Fumiaki Makino (Namba Lab., Graduate School of Frontier Biosciences, The University of Osaka)
+
+makino.fumiaki.fbs[at]osaka-u.ac.jp
 
 
 English version is [here (仮)](https://github.com/fmakino/SerialEM_SPAScripts_for_CRYO_ARM_series/blob/main/README_EN.md).
