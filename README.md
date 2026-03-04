@@ -1,5 +1,6 @@
 ## 前置き  introduction
 本スクリプトは、JEOL製 CRYO ARM シリーズ（CRYO ARM 200、300、300Ⅱ）における単粒子解析用データ収集（SPA data collection）およびマルチグリッド運用に対応したものです。
+本スクリプトの名前にMuyeとついています。これは中国語で牧野を発音したMùyě (ムーイエ)に由来しております。
 その他の装置（JEOL F200 や Thermo Fisher Scientific 社製装置など）での動作は保証しておりません。また、阪大生命機能科学科のCRYO ARM 300で動作しているスクリプトを提供します。もし、他の装置で運用する場合に不具合等あった場合は大阪大学大学院生命機能研究科 難波研究室 牧野かJEOLのクライオサポートチームに連絡をください。
 
 使用する SerialEM のバージョンは 4.2 以上を推奨します。
@@ -25,6 +26,8 @@ makino.fumiaki.fbs[at]osaka-u.ac.jp
 
 
 This script is designed for single-particle analysis (SPA) data collection and multi-grid operation on the JEOL CRYO ARM series microscopes (CRYO ARM 200, 300, and 300Ⅱ).
+
+The script name includes “Muye,” which comes from the Chinese pronunciation of the surname Makino (牧野).
 
 Operation on other microscopes (such as JEOL F200 or instruments manufactured by Thermo Fisher Scientific) is not guaranteed.
 The scripts provided here are those currently used on the CRYO ARM 300 at the Graduate School of Frontier Biosciences, Osaka University.
