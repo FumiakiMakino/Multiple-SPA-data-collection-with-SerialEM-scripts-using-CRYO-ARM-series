@@ -1921,7 +1921,7 @@ ScriptName FullAutoAlignComaAndStig
 latticeMode = 0          # 0: rectangular -> use two base vectors (X,Y); 1: hex -> use first two (u,v)
 runQuiet = 0           # 1: suppress popups during alignment
 returnToHole = 1         # 1: go back to hole center after alignment
-whichAlignHole = 2      # Which hole alignmet do you use 0:Find One Hole, 1: Template (Buf T), 2: YoneoLocr
+whichAlignHole = 0     # Which hole alignmet do you use 0:Find One Hole, 1: Template (Buf T), 2: YoneoLocr
 
 CallFunction EMProperties::LoadAdditionalProperties
 
@@ -2374,7 +2374,7 @@ save_V = 1
 save_R = 1
 workflowType = 2 #1 SPA data collecition, 2 Screening
 measure_thickness = 1 
-whichAlignHole = 2     # Which hole alignment do you use 0:FindOneHole, 1: Template (Buf T), 2: YoneoLocr
+whichAlignHole = 0     # Which hole alignment do you use 0:FindOneHole, 1: Template (Buf T), 2: YoneoLocr
 onlyRecord = 1          # for the screening mode
 # ========================================= 
 
@@ -2466,7 +2466,7 @@ save_R = 0
 workflowType = 1 # 1 SPA data collection, 2 Screening
 measure_thickness = 0
 use_apprV = 1 # use approach vector
-whichAlignHole = 2  # Which hole alignmet do you use 0:Find One Hole, 1: Template (Buf T), 2: YoneoLocr
+whichAlignHole = 0  # Which hole alignmet do you use 0:Find One Hole, 1: Template (Buf T), 2: YoneoLocr
 onlyRecord = 0 # for the screening mode
 high_speed = 0  # 0:not high speed data acquisition using normal K3 mode, 1: yes
 # ========================================= 
@@ -2787,7 +2787,7 @@ save_R = 0
 workflowType = 1 #1 SPA data collection, 2 Screening
 measure_thickness = 0
 use_apprV = 1 #use approach vector
-whichAlignHole = 2  # Which hole alignment do you use 0:Find One Hole, 1: Template (Buf T), 2: YoneoLocr
+whichAlignHole = 0  # Which hole alignment do you use 0:Find One Hole, 1: Template (Buf T), 2: YoneoLocr
 onlyRecord = 0  #for the screening mode
 high_speed = 1  # 0:not high speed data acquisition using normal K3 mode, 1: yes
 # ========================================= 
