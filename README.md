@@ -12,6 +12,8 @@ https://bio3d-mirror.nexperion.net/ftp/SerialEM/Tools/JeolTemExtPlugin/
 
 本スクリプトをインストールする場合は、以下に記載した手順に従って設定してください。
 また、操作マニュアルも同サイトにて配布しております。
+[here](https://github.com/FumiakiMakino/Multiple-SPA-data-collection-with-SerialEM-scripts-using-CRYO-ARM-series/blob/bfe698c861ee2f44a79467c884d560721d6856dc/SerialEM_SPA_Script-Muye_MultiGrid_2026forDistribution.pdf)
+
 
 なお、このマニュアルは個人的に作成したものであり、十分に清書されていない部分や説明が不十分な箇所が含まれている可能性があります。あらかじめご了承ください。
 
@@ -19,16 +21,12 @@ https://bio3d-mirror.nexperion.net/ftp/SerialEM/Tools/JeolTemExtPlugin/
 
 本マニュアルを整理・清書した正式版については、JEOL 側に依頼して装置へインストールされた場合に提供されます。
 内容は概ね同様ですが、正式版をお持ちの場合はそちらをご参照ください。
-https://github.com/FumiakiMakino/Multiple-SPA-data-collection-with-SerialEM-scripts-using-CRYO-ARM-series/blob/bfe698c861ee2f44a79467c884d560721d6856dc/SerialEMsettings-script_SPA-Muye
 
 もし不明な点がありましたら、日本電子（JEOL）のアプリケーションエンジニア、または
 大阪大学大学院生命機能研究科 難波研究室 牧野までお問い合わせください。
 
 makino.fumiaki.fbs[at]osaka-u.ac.jp
 
-
-
-*更新は下に記載しています。
 
 This script is for data collection of single particle analysis on JEOL's CRYO ARM series (200, 300, 300Ⅱ)....
 
@@ -42,7 +40,8 @@ English version is [here](https://github.com/fmakino/SerialEM_SPAScripts_for_CRY
 
 この考え方はマルチグリッド対応になっても変更ありません。従って、バッチでGlobal mapを取得したあと、同じくバッチでスクエアマップを取得する手順を薦めています。
 
-*ワークフローの図
+ワークフローの図
+[workflow_multigrid.pdf](https://github.com/user-attachments/files/25739176/workflow_multigrid.pdf)
 
 
 また、それぞれの作業を説明した動画を各項目でリンクしています。
