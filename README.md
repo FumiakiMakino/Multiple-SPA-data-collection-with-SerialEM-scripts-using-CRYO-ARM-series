@@ -41,7 +41,8 @@ English version is [here](https://github.com/fmakino/SerialEM_SPAScripts_for_CRY
 この考え方はマルチグリッド対応になっても変更ありません。従って、バッチでGlobal mapを取得したあと、同じくバッチでスクエアマップを取得する手順を薦めています。
 
 ワークフローの図
-[workflow_multigrid.pdf](https://github.com/user-attachments/files/25739176/workflow_multigrid.pdf)
+
+![workflow_multigrid](https://github.com/user-attachments/assets/edd98b35-ab29-473d-a710-bafd4d082522)
 
 
 また、それぞれの作業を説明した動画を各項目でリンクしています。
@@ -67,7 +68,7 @@ CLapt_for_record = 2 #1 CLapt for record, 0: Remove, 1: No.1, 2: No.2, 3:No.3, 4
 CLapt_for_view = 2 #1 CLapt for record, 0: Remove, 1: No.1, 2: No.2, 3:No.3, 4:No.4
         
 ```
-これらのスクリプトを使用する場合、プロパティファイルにJeolHasNitrogenClassを2に設定してください。
+これらのスクリプトを使用する場合、プロパティファイルのJeolHasNitrogenClassを2に設定してください。
 
 
 上記リンクからではなく、codeからzipをダウンロードしてtextファイルとしてダウンロードしてください。 
@@ -113,11 +114,13 @@ __Setting for Square__
 ・brightness_square = 100：100%が多く使われる。ただしenergy filterを入れる場合はその限りではなく、ちょうどよい明るさが存在する。FL focusと合わせて調整するとよい。  
 
 __Setting for FOV adjustment between Low-mag and record mag__         
- #Call Lens Alignment 
-・cmd_MagAtlas @= C:\ProgramData\SerialEM\afs\LowMag30.txt
-・cmd_MagSquare @= C:\ProgramData\SerialEM\afs\LowMag150.txt
-・cmd_MagRecord @= C:\ProgramData\SerialEM\afs\MagMode60k.txt
-  ：最初にこれらの値を設定する場合、まずはそれぞれの倍率に移動しSaveAtlasMag, SaveSquareMag, SaveRecordMagを行うこと。その後、AdjustFOV_byDrag-FLAのスクリプトを動かすこと。このスクリプトにはpythonライブラリを使用するため、pythonのパスを通して使用できるようするようにすること。以下にSerialEMproperties.txtへpythonモジュールの追加例を掲載する。
+・cmd_MagAtlas @= C:\ProgramData\SerialEM\afs\LowMag30.txt  
+・cmd_MagSquare @= C:\ProgramData\SerialEM\afs\LowMag150.txt  
+・cmd_MagRecord @= C:\ProgramData\SerialEM\afs\MagMode60k.txt  
+
+  最初にこれらの値を設定する場合、まずはそれぞれの倍率に移動しSaveAtlasMag, SaveSquareMag, SaveRecordMagを行うこと。
+  
+  その後、AdjustFOV_byDrag-FLAのスクリプトを動かすこと。このスクリプトにはpythonライブラリを使用するため、pythonのパスを通して使用できるようするようにすること。以下にSerialEMproperties.txtへpythonモジュールの追加例を掲載する。
   ```bash　　
 EnableExternalPython			1
 PathToPython 312 C:\Users\End-user\AppData\Local\Programs\Python\Python312\
@@ -141,7 +144,8 @@ __YoneoLocr__
   
 ### 確認すべきスクリプト  
 **1. SPADataCollection_Screening**  
-動作確認のみ。  
+動作確認を行う。  
+whichAlignHole = 0  # Which hole alignmet do you use 0:Find One Hole, 1: Template (Buf T), 2: YoneoLocr: ここの値を自分たちの装置の環境に合わせて行うこと。0がオススメ。
 スクリプトAutoFocusRoutine を確実に動かすためにFocusメニュー”target defocus” で-1.4~-2.0にsetすることを忘れずにすること。  
 スクリプトAlignToHoleを動かす際にYoneoLocrのYoneoHole ([Yonekura et al. 2021](https://www.nature.com/articles/s42003-021-02577-1)　[入手先](https://github.com/YonekuraLab/yoneoLocr))を使用する場合にはuse_YL = 1にすること。このとき、YoneoHoleを起動することを忘れずに行うこととaligntohole内のuse_YLの方が優先されるので注意が必要。  
 [説明動画](https://youtu.be/SymgfCqZiIg)
@@ -159,8 +163,8 @@ parameters: search_range = 40 がデフォルト
 
 
 **4. SPADataCollection**   
-AutoFocusbyOLとbyZで確認  
-＊頻繁に変えるものは最初の行に記載してある。  
+ 動作確認を行う。
+ ワークフローに従い実行してみる。詳しくはマニュアル参照。
 
 
 ＊ CRYO ARM 200用のスクリプト　"SerialEMsettings-script_Fukumura-Makino_z200_simple.txt"をアップロードしました。yoneohole起動時の動作のみ異なります。未検収。　　
