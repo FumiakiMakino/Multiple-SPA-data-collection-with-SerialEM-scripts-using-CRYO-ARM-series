@@ -57,7 +57,7 @@ Fumiaki Makino (Namba Lab., Graduate School of Frontier Biosciences, The Univers
 makino.fumiaki.fbs[at]osaka-u.ac.jp
 
 
-English version is [here (仮)](https://github.com/fmakino/SerialEM_SPAScripts_for_CRYO_ARM_series/blob/main/README_EN.md).
+English version is [here](https://github.com/FumiakiMakino/Multiple-SPA-data-collection-with-SerialEM-scripts-using-CRYO-ARM-series/blob/f9d76bda02b12ae5299037a07e7e871597c33f59/README_EN.md).
 
 ### 日本電子の装置を使用した単粒子解析のデータ収集(SPAデータ収集)の考え方  
 ・日本電子の装置はステージの精度がそれほど高くありません。そのため、SerialEMの従来のやり方では正確に場所をアライメントするために色々な工夫や正確なアライメントを行うための時間が必要になってしまいます。また、LowMagからMagに移行した際のヒステリシスも大きいので頻繁な行き来はお勧めできないのも理由の一つです。
