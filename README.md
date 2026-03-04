@@ -1,7 +1,3 @@
-![image](https://github.com/user-attachments/assets/8b503322-9429-48b2-9158-4c02f7806925)# SerialEM SPA scritps for CRYO ARM series
-
-
-
 ## 前置き  introduction
 本スクリプトは、JEOL製 CRYO ARM シリーズ（CRYO ARM 200、300、300Ⅱ）における単粒子解析用データ収集（SPA data collection）およびマルチグリッド運用に対応したものです。
 その他の装置（JEOL F200 や Thermo Fisher Scientific 社製装置など）での動作は保証しておりません。また、阪大生命機能科学科のCRYO ARM 300で動作しているスクリプトを提供します。もし、他の装置で運用する場合に不具合等あった場合は大阪大学大学院生命機能研究科 難波研究室 牧野かJEOLのクライオサポートチームに連絡をください。
@@ -28,9 +24,41 @@ https://bio3d-mirror.nexperion.net/ftp/SerialEM/Tools/JeolTemExtPlugin/
 makino.fumiaki.fbs[at]osaka-u.ac.jp
 
 
-This script is for data collection of single particle analysis on JEOL's CRYO ARM series (200, 300, 300Ⅱ)....
+This script is designed for single-particle analysis (SPA) data collection and multi-grid operation on the JEOL CRYO ARM series microscopes (CRYO ARM 200, 300, and 300Ⅱ).
 
-English version is [here](https://github.com/fmakino/SerialEM_SPAScripts_for_CRYO_ARM_series/blob/main/README_EN.md).
+Operation on other microscopes (such as JEOL F200 or instruments manufactured by Thermo Fisher Scientific) is not guaranteed.
+The scripts provided here are those currently used on the CRYO ARM 300 at the Graduate School of Frontier Biosciences, Osaka University.
+
+If you attempt to operate the scripts on other instruments and encounter any problems, please contact Fumiaki Makino at the Namba Laboratory, Graduate School of Frontier Biosciences, Osaka University, or the JEOL Cryo Support Team.
+
+We recommend using SerialEM version 4.2 or later.
+
+In addition, this script requires Bart’s plugin to operate.
+For installation instructions, please refer to the following manual:
+
+https://bio3d-mirror.nexperion.net/ftp/SerialEM/Tools/JeolTemExtPlugin/
+
+When installing this script, please follow the procedures described below.
+The operation manual is also available at the following link:
+
+[here (only japanese)](https://github.com/FumiakiMakino/Multiple-SPA-data-collection-with-SerialEM-scripts-using-CRYO-ARM-series/blob/bfe698c861ee2f44a79467c884d560721d6856dc/SerialEM_SPA_Script-Muye_MultiGrid_2026forDistribution.pdf)
+
+Please note that this manual was personally prepared and may contain sections that are not fully polished or where explanations may be insufficient. We appreciate your understanding.
+
+In addition, redistribution of this manual and scripts, as well as direct linking to the files (hotlinking), is strictly prohibited.
+
+A cleaned and formally edited version of this manual will be provided when the scripts are installed on the instrument through JEOL.
+The contents are generally the same; however, if you have access to the official version, please refer to that version instead.
+
+If you have any questions, please contact a JEOL application engineer, or
+
+Fumiaki Makino
+Namba Lab.
+Graduate School of Frontier Biosciences
+The University of Osaka.
+
+
+English version is [here (仮)](https://github.com/fmakino/SerialEM_SPAScripts_for_CRYO_ARM_series/blob/main/README_EN.md).
 
 ### 日本電子の装置を使用した単粒子解析のデータ収集(SPAデータ収集)の考え方  
 ・日本電子の装置はステージの精度がそれほど高くありません。そのため、SerialEMの従来のやり方では正確に場所をアライメントするために色々な工夫や正確なアライメントを行うための時間が必要になってしまいます。また、LowMagからMagに移行した際のヒステリシスも大きいので頻繁な行き来はお勧めできないのも理由の一つです。
@@ -49,7 +77,7 @@ English version is [here](https://github.com/fmakino/SerialEM_SPAScripts_for_CRY
   
   
 大阪大学大学院生命機能研究科で使用しているスクリプト  
-[CRYO ARM 300](https://github.com/fmakino/SPAscripts-using-SerialEM-for-CRYOARMseries/blob/main/SerialEMsettings-script_Fukumura-Makino_z300_simple.txt)  
+[CRYO ARM 300](https://github.com/FumiakiMakino/Multiple-SPA-data-collection-with-SerialEM-scripts-using-CRYO-ARM-series/blob/bfe698c861ee2f44a79467c884d560721d6856dc/SerialEMsettings-script_SPA-Muye)
 
 
 
