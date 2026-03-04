@@ -106,8 +106,8 @@ CLapt_for_view = 2 #1 CLapt for record, 0: Remove, 1: No.1, 2: No.2, 3:No.3, 4:N
   
 ・Focus/Tuneメニュー  Drift Protection にチェックが入っていること  
   
-・デフォルトのホールテンプレート(よく使うホールの大きさで作成しておく)を準備し、C:¥ProgramData¥SerialEM¥Data¥HoleImage¥hole_template.mrc  
-に事前にコピーしておくこと。  
+・もし、ホールテンプレートを使う場合は、デフォルトのホールテンプレート(よく使うホールの大きさで作成しておく)を準備し、C:¥ProgramData¥SerialEM¥Data¥HoleImage¥hole_template.mrc  
+に事前にコピーしておくと便利です  
   
 [説明動画(旧スクリプトによる説明)：PyJEM関連とhole templateについて](https://youtu.be/zP3PCU6qTfY)
 
@@ -141,7 +141,7 @@ __Setting for Square__
 ・brightness_square = 100：100%が多く使われる。ただしenergy filterを入れる場合はその限りではなく、ちょうどよい明るさが存在する。FL focusと合わせて調整するとよい。  
 
 __Setting for FOV adjustment between Low-mag and record mag__         
-・cmd_MagAtlas @= C:\ProgramData\SerialEM\afs\LowMag30.txt  
+・cmd_MagAtlas @= C:\ProgramData\SerialEM\afs\LowMag50.txt  
 ・cmd_MagSquare @= C:\ProgramData\SerialEM\afs\LowMag150.txt  
 ・cmd_MagRecord @= C:\ProgramData\SerialEM\afs\MagMode60k.txt  
 
