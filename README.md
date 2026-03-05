@@ -110,7 +110,15 @@ CLapt_for_view = 2 #1 CLapt for record, 0: Remove, 1: No.1, 2: No.2, 3:No.3, 4:N
 ・SerialEMのキャリブレーションとインストール(ver4.2以上 推奨)が完了していること  
   
 ・Focus/Tuneメニュー  Drift Protection にチェックが入っていること  
-  
+
+・MulGridSkipRealignをプロパティファイルに導入すること。これをいれないとSerialEMのRealignの機能が動く、LowMagに移行したりと日本電子の顕微鏡と相性が悪い。
+
+ただ、日本電子のCRYO ARMはカートリッジを採用しており、 回転が起こらず、位置ズレも数ミクロンに収まるためこれが必要ない。
+
+```bash　　
+MulGridSkipRealign			1
+```
+
 ・もし、ホールテンプレートを使う場合は、デフォルトのホールテンプレート(よく使うホールの大きさで作成しておく)を準備し、C:¥ProgramData¥SerialEM¥Data¥HoleImage¥hole_template.mrc  
 に事前にコピーしておくと便利です  
   
