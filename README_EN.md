@@ -52,7 +52,12 @@ Please download the scripts **from the repository Code → Download ZIP**, rathe
 - SerialEM calibration and installation have been completed (**version 4.2 or later recommended**)
 - In the **Focus/Tune** menu, make sure **Drift Protection** is enabled
 - Prepare a default hole template (with the hole size commonly used) and copy it in advance to:
-
+- Add MulGridSkipRealign to the property file.
+If this parameter is not set, SerialEM’s Realign function may be triggered, which can cause the system to switch back to LowMag and perform additional alignment steps. This behavior is not ideal for JEOL microscopes.
+```
+MulGridSkipRealign    1
+```
+However, the JEOL CRYO ARM uses a cartridge system, which minimizes grid rotation and typically limits positional shifts to only a few micrometers. Therefore, the Realign procedure is generally unnecessary.
 C:\ProgramData\SerialEM\Data\HoleImage\hole_template.mrc
 
 Explanation video (using the previous script version): PyJEM and hole template  
@@ -83,8 +88,8 @@ If you have used a similar script previously, copying the values from that confi
 
 __JEOL TEM type__
 - CLapt_type = 0  
-  # 0: CryoARM200, CryoARM200CA, CryoARM300II, F200  
-  # 1: 2nd CL aperture board, CryoARM300
+  \# 0: CryoARM200, CryoARM200CA, CryoARM300II, F200  
+  \# 1: 2nd CL aperture board, CryoARM300
 - ARM300: CRYO ARM 300 (Z300), set to 0.
 
 __Stage setting__
