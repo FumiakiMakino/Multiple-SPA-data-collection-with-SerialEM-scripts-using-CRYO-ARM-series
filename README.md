@@ -179,7 +179,7 @@ __YoneoLocr__
 動作確認を行う。  
 whichAlignHole = 0  # Which hole alignmet do you use 0:Find One Hole, 1: Template (Buf T), 2: YoneoLocr: ここの値を自分たちの装置の環境に合わせて行うこと。0がオススメ。
 スクリプトAutoFocusRoutine を確実に動かすためにFocusメニュー”target defocus” で-1.4~-2.0にsetすることを忘れずにすること。  
-スクリプトAlignToHoleを動かす際にYoneoLocrのYoneoHole ([Yonekura et al. 2021](https://www.nature.com/articles/s42003-021-02577-1)　[入手先](https://github.com/YonekuraLab/yoneoLocr))を使用する場合にはuse_YL = 1にすること。このとき、YoneoHoleを起動することを忘れずに行うこととaligntohole内のuse_YLの方が優先されるので注意が必要。  
+スクリプトAlignToHoleを動かす際にYoneoLocrのYoneoHole ([Yonekura et al. 2021](https://www.nature.com/articles/s42003-021-02577-1)　[入手先](https://github.com/YonekuraLab/yoneoLocr))を使用する場合にはwhichAlignHole = 2にすること。このとき、YoneoHoleを起動することを忘れずに行うことと。  
 [説明動画](https://youtu.be/SymgfCqZiIg)
 
 **2.AligncomaAndStig or FullAutoAligncomaAndStig**  
